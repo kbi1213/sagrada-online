@@ -152,6 +152,15 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 #rideHud .keys{grid-column:1/-1;font-size:11px;color:var(--muted)}
 #rideHud button{grid-row:span 2;font-size:12px;padding:7px 10px}
 #rideHud[hidden]{display:none}
+#fxScreen{position:fixed;inset:0;z-index:3;pointer-events:none;opacity:0;mix-blend-mode:screen;transition:opacity .9s ease-out}
+#fxScreen.on{opacity:1;transition:none}
+#skillBanner{position:fixed;left:50%;top:22%;z-index:6;transform:translate(-50%,-50%) scale(.6);opacity:0;pointer-events:none;white-space:nowrap;
+  font:900 clamp(34px,7vw,84px)/1 var(--display);letter-spacing:.06em;color:#fffaf0;-webkit-text-stroke:2px rgba(20,10,0,.65);
+  text-shadow:0 0 18px var(--sk,#ffd36a),0 0 42px var(--sk,#ffd36a),0 6px 0 rgba(0,0,0,.45)}
+#skillBanner.on{animation:skillIn 1.6s cubic-bezier(.15,.9,.2,1) forwards}
+@keyframes skillIn{0%{opacity:0;transform:translate(-50%,-50%) scale(1.8);filter:blur(8px)}12%{opacity:1;transform:translate(-50%,-50%) scale(1);filter:blur(0)}
+  75%{opacity:1;transform:translate(-50%,-50%) scale(1.04)}100%{opacity:0;transform:translate(-50%,-62%) scale(1.08)}}
+@media (prefers-reduced-motion:reduce){#skillBanner.on{animation-duration:.01s}}
 @media (max-width:520px){ #rideHud{bottom:calc(64px + env(safe-area-inset-bottom,0px))} }
 #statusModal{position:fixed;inset:0;z-index:8;background:rgba(10,8,6,.78);display:grid;place-items:center;padding:16px;
   padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px))}
@@ -241,6 +250,7 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 <form id="chatForm" hidden><input id="chatInput" maxlength="80" autocomplete="off" placeholder="하고 싶은 말 (80자) · Enter로 보내기, Esc로 닫기" aria-label="채팅 입력"><button type="submit">보내기</button></form>
 <div id="statusModal" hidden role="dialog" aria-label="상태창"><figure><img id="statusImg" alt=""><figcaption>Higgsfield로 만든 오리지널 디자인 · 눌러서 닫기</figcaption></figure></div>
 <div id="toast" hidden></div>
+<div id="fxScreen" aria-hidden="true"></div><div id="skillBanner" aria-live="polite"></div>
 <button id="navTab" type="button" aria-controls="panel" aria-expanded="false">☰ 메뉴</button>
 <div id="joy" hidden role="application" aria-label="이동 조이스틱 · 위 가속/앞으로, 아래 브레이크/뒤로, 좌우 방향"><span>조이스틱</span><i></i></div>
 <div id="pad" hidden><button type="button" id="padAtk">공격</button><button type="button" id="padSp">필살기</button>
@@ -973,7 +983,7 @@ const RIDES = {
   2: { f: 'porsche', wheelR: 0.35, name: '포르쉐 911 터보 S 카브리올레', open: true, len: 4.55, vmax: 50, boost: 64, acc: 12, brake: 16, rev: 4, vrev: 7, turn: 1.75, rider: false, yaw: Math.PI, gears: 8 },
   3: { f: 'amg', wheelR: 0.39, name: '메르세데스-AMG GT SUV (전기)', len: 5.1, vmax: 50, boost: 62, acc: 11.6, brake: 16, rev: 4, vrev: 7, turn: 1.45, rider: false, yaw: Math.PI, gears: 1, ev: true },
   4: { f: 'dmc', wheelR: 0.32, name: '시간여행 걸윙카', len: 4.27, vmax: 36, boost: 48, acc: 6.4, brake: 13, rev: 4, vrev: 7, turn: 1.6, rider: false, yaw: 0, gears: 5, timeJump: true },
-  5: { f: 'bike', wheelR: 0.33, name: 'V트윈 크루저', len: 2.45, vmax: 36, boost: 50, acc: 8.6, brake: 12, rev: 1, vrev: 1, turn: 2.1, rider: true, bike: true, yaw: 0, gears: 6 },
+  5: { f: 'bike', wheelR: 0.33, name: 'V트윈 크루저', len: 2.45, vmax: 36, boost: 50, acc: 8.6, brake: 12, rev: 1, vrev: 1, turn: 2.1, rider: true, bike: true, yaw: Math.PI, gears: 6 },
 };
 let timeArmed = true;
 let rideKind = 0, lastRide = 2, rideV = 0, rideSteer = 0, rideAcc = 0, launchT0 = null, launchShown = false;
@@ -1073,7 +1083,7 @@ function attachWeapons(g, model, w) {
     if (!proto) return;
     const hands = [];
     model.traverse(o => { if (o.isBone && /^RightHand$/i.test(o.name)) hands.unshift(o); if (w.both && o.isBone && /^LeftHand$/i.test(o.name)) hands.push(o); });
-    g.userData.weapons = hands.map((bone, i) => { const wp = proto.clone(true); wp.userData.bone = bone; wp.userData.side = i; g.add(wp); return wp; });
+    g.userData.weapons = hands.map((bone, i) => { const wp = proto.clone(true); wp.userData.bone = bone; wp.userData.side = i; wp.userData.k = Object.keys(WEAPONS).find(key => WEAPONS[key] === w); g.add(wp); return wp; });
   });
 }
 const _hp = new THREE.Vector3(), _hw = new THREE.Vector3(), _qh = new THREE.Quaternion(), _qg = new THREE.Quaternion(), _qd = new THREE.Quaternion(), _eu = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -1117,8 +1127,22 @@ function faceCamera(g, dancing) {
   bill.rotation.y = dancing ? 0 : camYaw - facing - g.userData.body.rotation.y;
 }
 
-const BOUNDS = { x0: -195, x1: 195, z0: -56, z1: 56 };
+const BOUNDS = { x0: -890, x1: 890, z0: -890, z1: 890 }; // the whole Eixample grid around the basilica
 const clampX = x => Math.min(BOUNDS.x1, Math.max(BOUNDS.x0, x)), clampZ = z => Math.min(BOUNDS.z1, Math.max(BOUNDS.z0, z));
+// city blocks are solid: chamfered squares of side S every PITCH metres (the basilica block and the two parks are open)
+function blockedAt(x, z, pad = .7) {
+  const i = Math.round(x / PITCH), j = Math.round(z / PITCH);
+  if (Math.abs(i) > 6 || Math.abs(j) > 6 || (j === 0 && Math.abs(i) <= 1)) return false;
+  const dx = Math.abs(x - i * PITCH), dz = Math.abs(z - j * PITCH), h = S / 2 + pad;
+  return dx < h && dz < h && dx + dz < 2 * h - CH;
+}
+// try the move; if a wall is in the way slide along it on one axis, else stay
+function moveTry(x0, z0, x1, z1) {
+  if (!blockedAt(x1, z1)) return [x1, z1, 0];
+  if (!blockedAt(x1, z0)) return [x1, z0, 1];
+  if (!blockedAt(x0, z1)) return [x0, z1, 1];
+  return [x0, z0, 2];
+}
 const insideAt = (x, z) => (Math.abs(x) < 22.5 && z > -30 && z < 45) || (Math.abs(x) < 30 && z > -17 && z < 13) || (z <= -30 && Math.hypot(x, z + 30) < 15);
 
 let walking = false, room = null, dest = null, lastSent = 0, sentKey = '', bowStart = -1e9, danceStart = -1e9;
@@ -1421,7 +1445,7 @@ const SPOTS = [
 ];
 const VIEW_SPOT = { overview: 'glory', nativity: 'nativity', passion: 'passion', interior: 'nave' };
 const PANO_EYE = 1.6; // camera height the panoramas were shot from
-const ASSET_V = '5'; // bump when panoramas, models or sprites are replaced so browsers fetch the new files
+const ASSET_V = '6'; // bump when panoramas, models or sprites are replaced so browsers fetch the new files
 const panoShader = {
   vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
   fragmentShader: `uniform sampler2D map; uniform vec3 C; uniform float yaw; uniform float op; uniform float gR; varying vec3 vW;
@@ -1522,7 +1546,7 @@ function exitTour() {
 }
 // keep the pilgrim on the photographed floor
 function clampToSpot(x, z) {
-  if (!tourOn || !tourSpot) return [clampX(x), clampZ(z)];
+  if (!tourOn || !tourSpot) { const [mx, mz] = moveTry(myPos.x, myPos.z, clampX(x), clampZ(z)); return [mx, mz]; }
   const dx = x - tourSpot.x, dz = z - tourSpot.z, d = Math.hypot(dx, dz);
   return d <= tourSpot.r ? [x, z] : [tourSpot.x + dx / d * tourSpot.r, tourSpot.z + dz / d * tourSpot.r];
 }
@@ -1710,26 +1734,29 @@ function atkState(g) {
   let e;
   if (a.kind === 'atk') {
     if (t < .17) { e = seg(t, 0, .17); s.arm = -2.8 * e; s.sw = -1.1 * e; s.tw = .35 * e; }
-    else if (t < .3) { e = seg(t, .17, .3); s.arm = -2.8 + 2.2 * e; s.sw = -1.1 + 2.8 * e; s.tw = .35 - .8 * e; s.lunge = .35 * e; fire('slash', () => { slashFx(g, C); sfx('slash', near); }); }
+    else if (t < .3) { e = seg(t, .17, .3); s.arm = -2.8 + 2.2 * e; s.sw = -1.1 + 2.8 * e; s.tw = .35 - .8 * e; s.lunge = .35 * e; fire('slash', () => { slashFx(g, C); sfx('slash', near); lightFx(P.x, 1.6, P.z, C, 6, 260); }); }
     else { e = seg(t, .3, a.dur); s.arm = -.6 * (1 - e); s.sw = 1.7 * (1 - e); s.tw = -.45 * (1 - e); s.lunge = .35 * (1 - e); }
     if (a.k === 8) { s.armL = s.arm * .9; s.swL = s.sw; }
     return s;
   }
-  fire('name', () => { textFx(g, a.name, C); flashFx(P.x, 1.2, P.z, C); sfx('slash', near); });
+  fire('name', () => { textFx(g, a.name, C); flashFx(P.x, 1.2, P.z, C); sfx('slash', near); lightFx(P.x, 2, P.z, C, 14, a.dur * 1000);
+    sparksFx(P.x, .3, P.z, C, 40, 3); if (g === myAvatar) screenFx(C, a.name); });
   switch (a.k) {
     case 9: // leap, overhead slam, a green crescent of force rolls forward
       if (t < .45) { e = seg(t, 0, .45); s.arm = -3 * e; s.sw = -1.2 * e; s.y = -.15 * e; s.tw = .3 * e; }
-      else if (t < .9) { e = seg(t, .45, .9); s.arm = -3; s.sw = -1.2; s.tw = .3; s.y = -.15 + 1.75 * Math.sin(e * Math.PI / 2); fire('aura', () => ringFx(P.x, P.z, C, 2.5, 600)); }
+      else if (t < .9) { e = seg(t, .45, .9); s.arm = -3; s.sw = -1.2; s.tw = .3; s.y = -.15 + 1.75 * Math.sin(e * Math.PI / 2); fire('aura', () => { ringFx(P.x, P.z, C, 2.5, 600); dragonFx(g, C, 1300); }); }
       else if (t < 1.05) { e = seg(t, .9, 1.05); s.arm = -3 + 2.6 * e; s.sw = -1.2 + 3 * e; s.y = 1.6 * (1 - e); s.tw = .3 - .7 * e; s.lunge = .6 * e; }
       else {
         e = seg(t, 1.3, a.dur); s.arm = -.4 * (1 - e); s.sw = 1.8 * (1 - e); s.tw = -.4 * (1 - e); s.lunge = .6 * (1 - e);
-        fire('slam', () => { crescentFx(g, C, 18); ringFx(P.x, P.z, C, 7, 900); sparksFx(P.x + Math.sin(yaw), .3, P.z + Math.cos(yaw), C, 70, 7); shake(.7 * near); sfx('boom', near); });
+        fire('slam', () => { crescentFx(g, C, 18); ringFx(P.x, P.z, C, 7, 900); crackFx(P.x + Math.sin(yaw) * 1.5, P.z + Math.cos(yaw) * 1.5, 7, C); dustFx(P.x, P.z, 16, 5);
+          lightFx(P.x, 1.5, P.z, C, 40, 700); if (g === myAvatar) screenFx(C); sparksFx(P.x + Math.sin(yaw), .3, P.z + Math.cos(yaw), C, 70, 7); shake(.7 * near); sfx('boom', near); });
       }
       break;
     case 10: // raise the spear, stamp the ground: three roaring shockwaves
       if (t < .6) { e = seg(t, 0, .6); s.arm = -2.9 * e; s.sw = -.2 * e; s.y = .35 * Math.sin(e * Math.PI / 2); }
       else if (t < .75) { e = seg(t, .6, .75); s.arm = -2.9 + 1.9 * e; s.sw = -.2 + 1.5 * e; s.y = .35 * (1 - e);
-        fire('stomp', () => { ringFx(P.x, P.z, C, 9, 800); sparksFx(P.x, .2, P.z, '#ffd27a', 90, 8); shake(1.1 * near); sfx('boom', near); }); }
+        fire('stomp', () => { ringFx(P.x, P.z, C, 9, 800); crackFx(P.x, P.z, 9, C); dustFx(P.x, P.z, 22, 7); for (let b = 0; b < 3; b++) setTimeout(() => boltFx(P.x + (Math.random() - .5) * 10, P.z + (Math.random() - .5) * 10, '#cfe6ff'), b * 160);
+          if (g === myAvatar) screenFx('#ffd9a0'); sparksFx(P.x, .2, P.z, '#ffd27a', 90, 8); shake(1.1 * near); sfx('boom', near); }); }
       else { e = seg(t, 1.2, a.dur); s.arm = -1 * (1 - e); s.sw = 1.3 * (1 - e); }
       if (t > .9) fire('r2', () => { ringFx(P.x, P.z, '#ffb347', 13, 900); sfx('boom', near * .6); });
       if (t > 1.1) fire('r3', () => { ringFx(P.x, P.z, '#ff4a2a', 17, 1000); pillarFx(P.x, P.z, C, 7, 700); });
@@ -1742,7 +1769,7 @@ function atkState(g) {
         fire('t' + i, () => { streakFx(g, C); sfx('slash', near * .7); });
       } else {
         e = seg(t, 1.5, a.dur); s.spin = e * Math.PI * 2; s.arm = -1.3 * (1 - e); s.sw = 1.45 * (1 - e); s.y = .4 * Math.sin(e * Math.PI);
-        fire('fin', () => { ringFx(P.x, P.z, C, 6, 700); sparksFx(P.x, 1, P.z, '#ffffff', 60, 6); shake(.4 * near); sfx('boom', near * .7); });
+        fire('fin', () => { ringFx(P.x, P.z, C, 6, 700); dragonFx(g, '#e8f6ff', 1000); dustFx(P.x, P.z, 10, 4); lightFx(P.x, 1.5, P.z, C, 30, 600); sparksFx(P.x, 1, P.z, '#ffffff', 60, 6); shake(.4 * near); sfx('boom', near * .7); });
       }
       break;
     }
@@ -1750,10 +1777,10 @@ function atkState(g) {
       if (t < .25) { e = seg(t, 0, .25); s.arm = s.armL = -1.4 * e; s.sw = s.swL = 1.5 * e; }
       else if (t < 1.6) { e = seg(t, .25, 1.6); s.spin = e * Math.PI * 6; s.y = .25 * Math.sin(e * Math.PI); s.arm = s.armL = -1.4; s.sw = s.swL = 1.5; fire('blades', () => bladeRingFx(g, C, 1350)); }
       else { e = seg(t, 1.6, a.dur); s.arm = s.armL = -1.4 * (1 - e); s.sw = s.swL = 1.5 * (1 - e);
-        fire('burst', () => { ringFx(P.x, P.z, C, 8, 800); pillarFx(P.x, P.z, C, 9, 800); sparksFx(P.x, 1, P.z, C, 80, 7); shake(.5 * near); sfx('boom', near); }); }
+        fire('burst', () => { ringFx(P.x, P.z, C, 8, 800); pillarFx(P.x, P.z, C, 9, 800); dustFx(P.x, P.z, 12, 5); lightFx(P.x, 1.5, P.z, C, 36, 700); if (g === myAvatar) screenFx(C); sparksFx(P.x, 1, P.z, C, 80, 7); shake(.5 * near); sfx('boom', near); }); }
       break;
     case 12: // the alien floats up glowing, a beam of light from the sky
-      if (t < .5) { e = seg(t, 0, .5); s.arm = s.armL = -1.6 * e; s.y = .3 * e; fire('beam', () => pillarFx(P.x, P.z, C, 14, 1800)); }
+      if (t < .5) { e = seg(t, 0, .5); s.arm = s.armL = -1.6 * e; s.y = .3 * e; fire('beam', () => { pillarFx(P.x, P.z, C, 14, 1800); boltFx(P.x, P.z, C); dragonFx(g, '#ffffff', 1600); }); }
       else if (t < 1.7) { e = seg(t, .5, 1.7); s.arm = s.armL = -1.6 - 1.2 * e; s.y = .3 + 1.6 * Math.sin(e * Math.PI / 2) + Math.sin(t * 9) * .06; s.spin = e * Math.PI * 2;
         if (t > 1) fire('stars', () => { sparksFx(P.x, 2.5, P.z, '#ffffff', 70, 4); ringFx(P.x, P.z, C, 6, 900); }); }
       else { e = seg(t, 1.7, a.dur); s.arm = s.armL = -2.8 * (1 - e); s.y = 1.9 * (1 - e); fire('land', () => { ringFx(P.x, P.z, C, 4, 600); sfx('boom', near * .5); }); }
@@ -1763,9 +1790,9 @@ function atkState(g) {
       else if (t < .95) { e = seg(t, .35, .95); s.y = -.25 + 2.6 * Math.sin(e * Math.PI / 2); s.arm = s.armL = .4 - 3.4 * e; s.lunge = .3 + .5 * e; if (a.k === 14) s.spin = 0;
         fire('jump', () => { sfx('slash', near); ringFx(P.x, P.z, C, 2.5, 500); }); }
       else if (t < 1.1) { e = seg(t, .95, 1.1); s.y = 2.35 * (1 - e); s.arm = s.armL = -3 + (a.k === 13 ? 2.2 : .6) * e; s.lunge = .8;
-        if (a.k === 13) fire('slam', () => { const fx = P.x + Math.sin(yaw) * 1.2, fz = P.z + Math.cos(yaw) * 1.2; ringFx(fx, fz, C, 8, 800); sparksFx(fx, 2.2, fz, '#ff9a3a', 80, 7); flashFx(fx, 2.4, fz, '#ffb04a'); shake(.8 * near); sfx('boom', near); }); }
+        if (a.k === 13) fire('slam', () => { const fx = P.x + Math.sin(yaw) * 1.2, fz = P.z + Math.cos(yaw) * 1.2; crackFx(fx, fz, 6, C); dustFx(fx, fz, 14, 5); lightFx(fx, 2, fz, '#ffb04a', 34, 600); if (g === myAvatar) screenFx(C); ringFx(fx, fz, C, 8, 800); sparksFx(fx, 2.2, fz, '#ff9a3a', 80, 7); flashFx(fx, 2.4, fz, '#ffb04a'); shake(.8 * near); sfx('boom', near); }); }
       else { e = seg(t, 1.3, a.dur); s.arm = s.armL = (a.k === 13 ? -.8 : -2.4) * (1 - e); s.lunge = .8 * (1 - e);
-        if (a.k === 14) fire('wall', () => { pillarFx(P.x + Math.sin(yaw) * 1.4, P.z + Math.cos(yaw) * 1.4, C, 5, 900); ringFx(P.x, P.z, C, 7, 800); shake(.6 * near); sfx('boom', near); }); }
+        if (a.k === 14) fire('wall', () => { crackFx(P.x, P.z, 6, C); dustFx(P.x, P.z, 12, 4); lightFx(P.x, 2, P.z, C, 26, 600); pillarFx(P.x + Math.sin(yaw) * 1.4, P.z + Math.cos(yaw) * 1.4, C, 5, 900); ringFx(P.x, P.z, C, 7, 800); shake(.6 * near); sfx('boom', near); }); }
       break;
     default: // everyone else: a rising whirlwind
       if (t < .3) { e = seg(t, 0, .3); s.arm = s.armL = -2.8 * e; }
@@ -1816,6 +1843,7 @@ function postPose(g, now, speed, accel) {
   if (s) { b.position.y += s.y; b.rotation.y += s.spin; b.position.z = s.lunge; } else b.position.z = 0;
   rideVisual(g, now, speed, accel);
   if (s || u.mount) holdWeapons(g);
+  if (s || (u.trails && u.trails.some(t => t.pts.length))) updateTrails(g, !!s, u.atk ? u.atk.color : '#ffffff');
 }
 function nearMe(g) { if (g === myAvatar) return 1; const d = g.position.distanceTo(myPos); return d > 45 ? 0 : 1 - d / 45; }
 
@@ -1834,6 +1862,7 @@ const FX = [];
 const addMat = (color, map) => new THREE.MeshBasicMaterial({ color, map: map || null, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
 function addFx(o, dur, upd) { o.userData.keepInTour = true; o.renderOrder = 5; scene.add(o); const f = { o, s: performance.now(), dur, upd }; FX.push(f); upd(0, o, 0); }
 function updateFx(now, dt) {
+  updateLight();
   const t = performance.now();
   for (let i = FX.length - 1; i >= 0; i--) {
     const f = FX[i], k = (t - f.s) / f.dur;
@@ -1844,6 +1873,92 @@ function updateFx(now, dt) {
     const left = Math.ceil((spReady - t) / 1000), lab = left > 0 ? `필살기 ${left}초` : '필살기 (R)';
     if (lab !== spLabel) { spLabel = lab; sb.textContent = lab; }
   }
+}
+// --- light that actually lights the scene: one point light kept in the scene (constant light count, no shader rebuilds) ---
+const fxLight = new THREE.PointLight(0xffffff, 0, 22, 1.6); fxLight.userData.keepInTour = true; scene.add(fxLight);
+let fxL = null;
+function lightFx(x, y, z, color, power, dur) { fxLight.position.set(x, y, z); fxLight.color.set(color); fxL = { s: performance.now(), dur, power }; }
+function updateLight() { if (!fxL) return; const k = (performance.now() - fxL.s) / fxL.dur; if (k >= 1) { fxLight.intensity = 0; fxL = null; return; }
+  fxLight.intensity = fxL.power * (k < .08 ? k / .08 : Math.pow(1 - (k - .08) / .92, 2)) * (1 + Math.sin(performance.now() / 23) * .12); }
+// --- whole-screen colour flash and the move's name, for your own special ---
+function screenFx(color, name) {
+  const el = document.getElementById('fxScreen'), bn = document.getElementById('skillBanner');
+  el.style.background = `radial-gradient(circle at 50% 58%, ${color}cc 0%, ${color}55 28%, transparent 62%), radial-gradient(circle, transparent 55%, rgba(0,0,0,.55) 100%)`;
+  el.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('on')));
+  if (name) { bn.textContent = name; bn.style.setProperty('--sk', color); bn.classList.remove('on'); void bn.offsetWidth; bn.classList.add('on'); }
+}
+// --- dust: soft grey puffs that billow out and rise ---
+const smokeTex = (() => { const c = cv(64, 64), x = c.getContext('2d'), gr = x.createRadialGradient(32, 32, 2, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,.9)'); gr.addColorStop(.5, 'rgba(255,255,255,.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c); return t; })();
+function dustFx(x, z, n, spread, color = '#b9a68c') {
+  const grp = new THREE.Group(); grp.position.set(x, 0, z); const parts = [];
+  for (let i = 0; i < n; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color, transparent: true, depthWrite: false, opacity: 0 }));
+    const a = Math.random() * Math.PI * 2, v = spread * (.5 + Math.random() * .7); sp.position.set(0, .3, 0); grp.add(sp); parts.push([sp, Math.cos(a) * v, .6 + Math.random() * 1.4, Math.sin(a) * v, .8 + Math.random() * 1.2]); }
+  addFx(grp, 1800, (k, o, dt) => { for (const [sp, vx, vy, vz, sz] of parts) { sp.position.x += vx * dt * (1 - k); sp.position.z += vz * dt * (1 - k); sp.position.y += vy * dt;
+    const r = sz * (1 + k * 3); sp.scale.set(r, r, 1); sp.material.opacity = (k < .1 ? k / .1 : 1 - k) * .55; } });
+}
+// --- cracked ground decal ---
+const crackTex = (() => { const c = cv(256, 256), x = c.getContext('2d'); x.translate(128, 128); x.strokeStyle = 'rgba(255,255,255,1)'; x.lineCap = 'round';
+  for (let i = 0; i < 14; i++) { let a = i / 14 * Math.PI * 2 + Math.random() * .3, r = 8, px = 0, py = 0; x.lineWidth = 5; x.beginPath(); x.moveTo(0, 0);
+    while (r < 120) { r += 10 + Math.random() * 14; a += (Math.random() - .5) * .5; px = Math.cos(a) * r; py = Math.sin(a) * r; x.lineTo(px, py); x.lineWidth = Math.max(1, x.lineWidth - .5); } x.stroke(); }
+  return new THREE.CanvasTexture(c); })();
+function crackFx(x, z, size, glow) {
+  const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2); geo.userData = {};
+  const dark = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: crackTex, color: '#1a120a', transparent: true, depthWrite: false, opacity: .85 }));
+  const hot = new THREE.Mesh(geo, addMat(glow, crackTex)); dark.position.set(x, .08, z); hot.position.set(x, .09, z); dark.scale.setScalar(size); hot.scale.setScalar(size);
+  dark.rotation.y = hot.rotation.y = Math.random() * 6; dark.userData.ownGeo = true;
+  const grp = new THREE.Group(); grp.add(dark, hot);
+  addFx(grp, 3200, k => { dark.material.opacity = (k > .75 ? (1 - k) / .25 : 1) * .85; hot.material.opacity = Math.max(0, 1 - k * 2.2); });
+}
+// --- lightning: a jagged bolt from the sky ---
+function boltFx(x, z, color) {
+  const grp = new THREE.Group(); let px = x + (Math.random() - .5) * 4, py = 26, pz = z + (Math.random() - .5) * 4;
+  const mat = addMat(color);
+  while (py > 0) { const ny = Math.max(0, py - 2 - Math.random() * 3), nx = x + (px - x) * .6 + (Math.random() - .5) * 2.4 * (ny / 26 + .2), nz = z + (pz - z) * .6 + (Math.random() - .5) * 2.4 * (ny / 26 + .2);
+    const a = new THREE.Vector3(px, py, pz), b = new THREE.Vector3(nx, ny, nz), L = a.distanceTo(b);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(.12, .12, L), mat); m.userData.ownGeo = true; m.position.copy(a).add(b).multiplyScalar(.5); m.lookAt(b); grp.add(m); px = nx; py = ny; pz = nz; }
+  addFx(grp, 380, k => { mat.opacity = (Math.sin(k * 40) > -.2 ? 1 : .2) * (1 - k); });
+  flashFx(x, .6, z, '#ffffff'); lightFx(x, 6, z, color, 30, 380);
+}
+// --- dragon of light: glowing beads spiralling up around the hero, head first ---
+function dragonFx(g, color, dur = 1400) {
+  const grp = new THREE.Group(), N = 34, beads = [];
+  for (let i = 0; i < N; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    const sz = i === 0 ? 1.6 : 1.1 * (1 - i / N) + .25; sp.scale.set(sz, sz, 1); grp.add(sp); beads.push(sp); }
+  addFx(grp, dur, (k) => { grp.position.copy(g.position);
+    beads.forEach((sp, i) => { const t = k * 1.6 - i * .022; if (t < 0) { sp.visible = false; return; } sp.visible = true;
+      const a = t * Math.PI * 5, r = 1.6 + Math.sin(t * 7) * .25; sp.position.set(Math.cos(a) * r, .2 + t * 4.2, Math.sin(a) * r); sp.material.opacity = (1 - k) * (1 - i / N * .6); }); });
+}
+// --- weapon trails: a ribbon through the last positions of the blade, fading toward the tail ---
+const TRAIL_N = 18, _tA = new THREE.Vector3(), _tB = new THREE.Vector3();
+function updateTrails(g, active, color) {
+  const u = g.userData, B = u.bones;
+  const sources = u.weapons && u.weapons.length ? u.weapons.map(wp => [wp, WEAPONS[wp.userData.k] || WEAPONS[11]])
+    : (B && B.RightHand ? [[null, null]] : []);
+  if (!u.trails) u.trails = [];
+  sources.forEach((src, si) => {
+    let T = u.trails[si];
+    if (!T) {
+      const geo = new THREE.BufferGeometry(), pos = new Float32Array(TRAIL_N * 2 * 3), col = new Float32Array(TRAIL_N * 2 * 3), ix = [];
+      for (let i = 0; i < TRAIL_N - 1; i++) { const a = i * 2; ix.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setIndex(ix);
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+      mesh.frustumCulled = false; mesh.renderOrder = 6; g.add(mesh); T = u.trails[si] = { mesh, pts: [], c: new THREE.Color() };
+    }
+    if (active) {
+      const [wp, W] = src;
+      if (wp) { const top = W.len * (1 - W.grip); _tA.set(0, top, 0); _tB.set(0, top * .3, 0); wp.localToWorld(_tA); wp.localToWorld(_tB); }
+      else { B.RightHand.getWorldPosition(_tA); B.RightForeArm.getWorldPosition(_tB); }
+      T.pts.unshift([_tA.clone(), _tB.clone()]); if (T.pts.length > TRAIL_N) T.pts.pop(); T.c.set(color);
+    } else if (T.pts.length) T.pts.pop();
+    const P = T.mesh.geometry.attributes.position, Cc = T.mesh.geometry.attributes.color, m = T.pts.length;
+    for (let i = 0; i < m; i++) { const f = Math.pow(1 - i / TRAIL_N, 1.6);
+      _tA.copy(T.pts[i][0]); g.worldToLocal(_tA); _tB.copy(T.pts[i][1]); g.worldToLocal(_tB);
+      P.setXYZ(i * 2, _tA.x, _tA.y, _tA.z); P.setXYZ(i * 2 + 1, _tB.x, _tB.y, _tB.z);
+      Cc.setXYZ(i * 2, T.c.r * f + f * .35, T.c.g * f + f * .35, T.c.b * f + f * .35); Cc.setXYZ(i * 2 + 1, T.c.r * f * .15, T.c.g * f * .15, T.c.b * f * .15); }
+    P.needsUpdate = Cc.needsUpdate = true; T.mesh.geometry.setDrawRange(0, Math.max(0, m - 1) * 6); T.mesh.visible = m > 1;
+  });
 }
 function ringFx(x, z, color, maxR, dur) {
   const m = new THREE.Mesh(RING_GEO, addMat(color)); m.position.set(x, .07, z);
@@ -2024,7 +2139,10 @@ function loadRide(k) {
     obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true;
       if (R.horse) matte(o.material, .02); else for (const m of [].concat(o.material)) { if (m.emissive) { m.emissive.setRGB(0, 0, 0); m.emissiveMap = null; }
         // generated PBR maps read most of the body as metal, which turns the paint into a mirror: keep metal for chrome only, add a little gloss
-        m.metalness = R.bike ? .55 : .3; m.roughness = Math.max(m.roughness, .9); m.envMapIntensity = .55; m.needsUpdate = true; } } });
+        if (R.bike) { m.metalness = .55; m.roughness = .9; m.envMapIntensity = .55; }
+        else { m.normalMap = null; m.metalness = .25; m.roughness = .55; m.envMapIntensity = .6; } // the generated normal map is noise: drop it, keep a satin clearcoat look
+        m.needsUpdate = true; }
+      if (!R.horse && !R.bike) smoothNormals(o.geometry, .62); } });
     const wrap = new THREE.Group(); wrap.add(obj); wrap.userData.h = box.max.y - box.min.y;
     if (R.wheelR) { try { splitWheels(obj, wrap, R); } catch (e) { console.warn('wheels', e); } }
     if (R.horse) { try { splitLegs(obj, wrap, wrap.userData.h); } catch (e) { console.warn('legs', e); } }
@@ -2079,6 +2197,30 @@ function rideVisual(g, now, speed, accel) {
     if (v) { v.rotation.x = S.p; v.rotation.z = S.r; v.position.y = -Math.abs(S.p) * .25 + (sp > 1 ? Math.sin(now / 37) * .003 : 0); rollWheels(v, speed, dt, dyaw); }
     u.label.position.y = h + .6;
   }
+}
+// generated meshes come with faceted, noisy normals: average the face normals of every corner that shares a position,
+// but only across edges flatter than the crease (cos 52°), so panel lines and wheel rims stay crisp
+function smoothNormals(geo, crease) {
+  const pos = geo.attributes.position, n = pos.count, idx = geo.index ? geo.index.array : null; if (!idx) return;
+  const key = new Int32Array(n), map = new Map();
+  for (let i = 0; i < n; i++) { const k = Math.round(pos.getX(i) * 2e3) + ',' + Math.round(pos.getY(i) * 2e3) + ',' + Math.round(pos.getZ(i) * 2e3);
+    let id = map.get(k); if (id === undefined) { id = map.size; map.set(k, id); } key[i] = id; }
+  const F = idx.length / 3, fn = new Float32Array(idx.length), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const start = new Int32Array(map.size + 1);
+  for (let f = 0; f < F; f++) { a.fromBufferAttribute(pos, idx[f * 3]); b.fromBufferAttribute(pos, idx[f * 3 + 1]); c.fromBufferAttribute(pos, idx[f * 3 + 2]);
+    b.sub(a); c.sub(a); b.cross(c); fn[f * 3] = b.x; fn[f * 3 + 1] = b.y; fn[f * 3 + 2] = b.z; for (let q = 0; q < 3; q++) start[key[idx[f * 3 + q]] + 1]++; }
+  for (let i = 0; i < map.size; i++) start[i + 1] += start[i];
+  const fill = start.slice(0, map.size), list = new Int32Array(F * 3);
+  for (let f = 0; f < F; f++) for (let q = 0; q < 3; q++) list[fill[key[idx[f * 3 + q]]]++] = f;
+  const out = new Float32Array(n * 3), own = new Float32Array(n * 3);
+  for (let f = 0; f < F; f++) for (let q = 0; q < 3; q++) { const v = idx[f * 3 + q]; own[v * 3] += fn[f * 3]; own[v * 3 + 1] += fn[f * 3 + 1]; own[v * 3 + 2] += fn[f * 3 + 2]; }
+  for (let v = 0; v < n; v++) {
+    a.set(own[v * 3], own[v * 3 + 1], own[v * 3 + 2]).normalize(); c.set(0, 0, 0);
+    const id = key[v];
+    for (let t = start[id]; t < start[id + 1]; t++) { const f = list[t]; b.set(fn[f * 3], fn[f * 3 + 1], fn[f * 3 + 2]); const L = b.length(); if (L > 0 && b.dot(a) / L > crease) c.add(b); }
+    if (c.lengthSq() === 0) c.copy(a); c.normalize(); out[v * 3] = c.x; out[v * 3 + 1] = c.y; out[v * 3 + 2] = c.z;
+  }
+  geo.setAttribute('normal', new THREE.BufferAttribute(out, 3)); if (geo.attributes.tangent) geo.deleteAttribute('tangent');
 }
 // ---- wheels: the generated vehicles are one mesh, so cut each tyre+rim out by position and give it its own axle ----
 // In the ride's frame (metres, nose to +z, ground at y = 0) the lowest vertices are the tyre contact patches: they cluster at the
@@ -2235,7 +2377,8 @@ function timeJump() {
   if (room) room.presence({ a: 'tj', t: Date.now() }).catch(() => {});
   setTimeout(() => {
     if (rideKind !== 4) return;
-    const nx = clampX((Math.random() * 2 - 1) * 150), nz = clampZ((Math.random() * 2 - 1) * 40);
+    const onX = Math.random() < .5, lane = (Math.floor(Math.random() * 12) - 6 + .5) * PITCH, along = (Math.random() * 2 - 1) * 780;
+    const nx = onX ? along : lane, nz = onX ? lane : along; // land on a street
     vDelta.set(nx - myPos.x, 0, nz - myPos.z); myPos.x = nx; myPos.z = nz; camera.position.add(vDelta); controls.target.add(vDelta);
     myAvatar.position.copy(myPos); timeFx(myAvatar); rideV = Math.min(rideV, 25); sendPresence(true);
   }, 450);
@@ -2252,7 +2395,7 @@ function setRide(k) {
   if (k) {
     setNav(false);
     document.getElementById('hudName').textContent = RIDES[k].name; document.getElementById('hudLaunch').textContent = '0→100 측정 준비';
-    controls.maxDistance = 90; toast(`${RIDES[k].name}에 탔어요 · W 가속 · S 브레이크 · A/D 핸들 · Shift 부스트 · E 내리기`);
+    controls.maxDistance = 140; toast(`${RIDES[k].name}에 탔어요 · W 가속 · S 브레이크 · A/D 핸들 · Shift 부스트 · E 내리기`);
   } else myAvatar.userData.body.visible = true;
   engine(k >= 2);
   sendPresence(true);
@@ -2280,8 +2423,10 @@ function updateRide(dt, now) {
   rideSteer += (st - rideSteer) * Math.min(1, dt * 6);
   const grip = Math.min(1, Math.abs(rideV) / 3) / (1 + Math.abs(rideV) / 40);
   myRot += rideSteer * R.turn * grip * (rideV < 0 ? -1 : 1) * dt;
-  const nx = myPos.x + Math.sin(myRot) * rideV * dt, nz = myPos.z + Math.cos(myRot) * rideV * dt, cx = clampX(nx), cz = clampZ(nz);
-  if (cx !== nx || cz !== nz) { if (Math.abs(rideV) > 8) { toast('쾅! 경계에 부딪혔어요'); shake(.6); sfx('boom', .5); } rideV *= -.15; }
+  const nx = myPos.x + Math.sin(myRot) * rideV * dt, nz = myPos.z + Math.cos(myRot) * rideV * dt, bx = clampX(nx), bz = clampZ(nz);
+  const [cx, cz, hit] = moveTry(myPos.x, myPos.z, bx, bz);
+  if (bx !== nx || bz !== nz || hit === 2) { if (Math.abs(rideV) > 8) { toast('쾅! 부딪혔어요'); shake(.6); sfx('boom', .5); sparksFx(cx, .6, cz, '#ffd27a', 30, 4); } rideV *= -.15; }
+  else if (hit === 1) { rideV *= Math.pow(.25, dt); if (Math.abs(rideV) > 10 && Math.random() < dt * 8) sparksFx(cx, .5, cz, '#ffd27a', 10, 3); } // scraping along a wall
   vDelta.set(cx - myPos.x, 0, cz - myPos.z); myPos.x = cx; myPos.z = cz; camera.position.add(vDelta);
   if (Math.abs(rideV) > 2 && !tween) { // chase camera settles in behind
     const dist = (R.rider ? 6.5 : 8.5) + Math.abs(rideV) * .07, dir = rideV >= 0 ? 1 : -1;
