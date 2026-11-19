@@ -119,6 +119,22 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
   #chatOpen{top:calc(64px + env(safe-area-inset-top,0px));bottom:auto} #chatForm{top:calc(110px + env(safe-area-inset-top,0px));bottom:auto} }
 
 #statusBtn{width:100%;margin-top:6px}
+.fight{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.fight button{font-size:12px;padding:8px 4px}
+.rides{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
+.rides button{font-size:12px;padding:8px 2px}
+#rideHud{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:5;min-width:min(340px,calc(100% - 32px));
+  background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;padding:10px 14px;
+  display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:center;font-variant-numeric:tabular-nums}
+#rideHud .spd{font:600 34px/1 var(--body);grid-row:span 2}
+#rideHud .spd small{font-size:12px;font-weight:400;color:var(--muted);margin-left:4px}
+#rideHud .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden}
+#rideHud .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#e9a84c,#ff5a36)}
+#rideHud .meta{font-size:12px;color:var(--muted)}
+#rideHud .keys{grid-column:1/-1;font-size:11px;color:var(--muted)}
+#rideHud button{grid-row:span 2;font-size:12px;padding:7px 10px}
+#rideHud[hidden]{display:none}
+@media (max-width:520px){ #rideHud{bottom:calc(64px + env(safe-area-inset-bottom,0px))} }
 #statusModal{position:fixed;inset:0;z-index:8;background:rgba(10,8,6,.78);display:grid;place-items:center;padding:16px;
   padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px))}
 #statusModal img{max-width:min(1100px,100%);max-height:calc(100vh - 100px);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.6);display:block}
@@ -173,6 +189,11 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
     </div>
     <p class="me-line">내 이름 <b id="myName"></b></p>
     <div class="pick" id="charPick" role="group" aria-label="캐릭터 고르기"></div>
+    <div class="fight"><button id="atkBtn" type="button" disabled>공격 (F)</button><button id="spBtn" type="button" disabled>필살기 (R)</button></div>
+    <div class="rides" role="group" aria-label="탈것">
+      <button type="button" data-ride="0" aria-pressed="true" disabled>걷기</button><button type="button" data-ride="1" aria-pressed="false" disabled>말</button>
+      <button type="button" data-ride="2" aria-pressed="false" disabled>포르쉐</button><button type="button" data-ride="3" aria-pressed="false" disabled>AMG</button>
+    </div>
     <button id="statusBtn" type="button" hidden>상태창 보기</button>
   </div>
   <div>
@@ -201,6 +222,9 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 <form id="chatForm" hidden><input id="chatInput" maxlength="80" autocomplete="off" placeholder="하고 싶은 말 (80자) · Enter로 보내기, Esc로 닫기" aria-label="채팅 입력"><button type="submit">보내기</button></form>
 <div id="statusModal" hidden role="dialog" aria-label="상태창"><figure><img id="statusImg" alt=""><figcaption>Higgsfield로 만든 오리지널 디자인 · 눌러서 닫기</figcaption></figure></div>
 <div id="toast" hidden></div>
+<div id="rideHud" hidden><div class="spd"><span id="hudSpd">0</span><small>km/h</small></div><div class="bar"><i id="hudBar"></i></div><button id="hudSound" type="button">소리 끄기</button>
+  <div class="meta"><span id="hudName"></span> · <span id="hudGear"></span> · <span id="hudLaunch">0→100 측정 준비</span></div>
+  <div class="keys">W 가속 · S 브레이크/후진 · A/D 핸들 · Shift 부스트 · E 내리기 · F 공격 · R 필살기</div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
@@ -909,6 +933,22 @@ function nameSprite(text, isMe) {
 const CHARS = ['하준', '도윤', '서진', '이안', '태오', '민혁', '유찬', '유비', '관우', '장비', '조자룡'];
 const SPRITE_CHARS = 7; // 1..7 have photo sprites as a stand-in while the 3D model loads
 // weapons held by the Three Kingdoms heroes: file, length in metres, grip point from the butt end (0..1), both hands
+
+// Three Kingdoms heroes: effect colour and the name of each special move (original names)
+const HERO = {
+  8: { color: '#ffd36a', sp: '인덕쌍검무', dur: 2.0 },
+  9: { color: '#46e08a', sp: '청룡언월참', dur: 1.9 },
+  10: { color: '#ff7a2a', sp: '장판교 대갈일성', dur: 1.8 },
+  11: { color: '#a8dcff', sp: '백룡칠연창', dur: 2.0 },
+};
+// rides: length in metres, top speed (m/s) normally and with Shift, acceleration (m/s²), braking, steering rate
+const RIDES = {
+  1: { f: 'horse', name: '말', len: 2.45, vmax: 9, boost: 16, acc: 4.2, brake: 8, rev: 1.5, vrev: 1.5, turn: 2.4, rider: true, yaw: 0, gears: 0 },
+  2: { f: 'porsche', name: '포르쉐 911 카레라', len: 4.54, vmax: 46, boost: 60, acc: 8.4, brake: 16, rev: 4, vrev: 7, turn: 1.75, rider: false, yaw: 0, gears: 8 },
+  3: { f: 'amg', name: 'AMG CLA 45 S 4MATIC+', len: 4.69, vmax: 43, boost: 56, acc: 8.0, brake: 15, rev: 4, vrev: 7, turn: 1.65, rider: false, yaw: 0, gears: 8 },
+};
+let rideKind = 0, lastRide = 2, rideV = 0, rideSteer = 0, rideAcc = 0, launchT0 = null, launchShown = false;
+let atkReady = 0, spReady = 0, soundOn = true, actx = null, eng = null, shakeT = -1e9, shakeA = 0, spLabel = '';
 const WEAPONS = { 8: { f: 'w8', len: .95, grip: .1, both: true }, 9: { f: 'w9', len: 2.3, grip: .38 }, 10: { f: 'w10', len: 2.6, grip: .38 }, 11: { f: 'w11', len: 2.5, grip: .38 } };
 const charTex = {};
 function charTextures(k) {
@@ -943,6 +983,16 @@ function makeAvatar(color, name, isMe, k = 0) {
 
 // ---------- rigged 3D characters (Meshy GLB with a walk clip); the billboard shows until the model arrives ----------
 const gltfLoader = new THREE.GLTFLoader();
+// Meshy bakes the albedo into an emissive map at full strength and ships metal-heavy PBR maps: that is the glow.
+// Turn the self-light off, keep metal only where the map says so, and soften reflections so skin and cloth read as cloth.
+function matte(m, metal) {
+  for (const x of Array.isArray(m) ? m : [m]) {
+    if (!x || x.userData.matte) continue; x.userData.matte = true;
+    if (x.emissive) { x.emissive.setRGB(0, 0, 0); x.emissiveMap = null; x.emissiveIntensity = 0; }
+    if ('metalness' in x) { x.metalness = metal; x.roughness = 1; x.envMapIntensity = .55; }
+    x.flatShading = false; x.needsUpdate = true;
+  }
+}
 const modelCache = {};
 function loadCharModel(k) {
   if (!modelCache[k]) modelCache[k] = new Promise(res => gltfLoader.load(`/models/${k}.glb?v=${ASSET_V}`, g => res(g), undefined, () => res(null)));
@@ -953,7 +1003,9 @@ function upgradeTo3D(g, k) {
     if (!gltf) return;
     const model = THREE.SkeletonUtils.clone(gltf.scene);
     // Meshy rigs at the requested height (1.78 m) with feet at y = 0, so the model is used as delivered
-    model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+    model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; matte(o.material, .08); } });
+    const bones = {}; model.traverse(o => { if (o.isBone) bones[o.name] = o; }); g.userData.bones = bones;
+    if (g.userData.mount) setMount(g, g.userData.mount, true);
     if (g.userData.bill) g.userData.bill.visible = false;
     g.userData.body.add(model);
     const mixer = new THREE.AnimationMixer(model), clip = gltf.animations[0];
@@ -976,7 +1028,7 @@ function loadWeapon(w) {
     obj.updateMatrixWorld(true);
     const b2 = new THREE.Box3().setFromObject(obj), c = b2.getCenter(new THREE.Vector3());
     obj.position.set(-c.x, -(b2.min.y + (b2.max.y - b2.min.y) * w.grip), -c.z);
-    obj.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
+    obj.traverse(o => { if (o.isMesh) { o.castShadow = true; matte(o.material, .55); } });
     wrap.add(obj); res(wrap);
   }, undefined, () => res(null)));
   return weaponCache[w.f];
@@ -996,7 +1048,8 @@ function holdWeapons(g) {
   for (const wp of ws) {
     wp.userData.bone.getWorldPosition(_hp); g.worldToLocal(_hp);
     wp.position.copy(_hp);
-    wp.rotation.set(.18, 0, wp.userData.side ? .12 : -.12); // upright, leaning slightly forward and outward
+    const sw = g.userData.wSwing; // attack swing: tip goes back over the shoulder, then forward and down
+    wp.rotation.order = 'YXZ'; wp.rotation.set(.18 + (sw ? sw[wp.userData.side] || 0 : 0), g.userData.body.rotation.y, wp.userData.side ? .12 : -.12); // upright, leaning slightly forward and outward
   }
 }
 function animate3D(g, moving, dt, fast) {
@@ -1006,6 +1059,7 @@ function animate3D(g, moving, dt, fast) {
   if (moving) { a.paused = false; a.timeScale = fast ? 2.6 : 1.6; }
   else { a.paused = true; a.time = 0; }
   u.mixer.update(dt);
+  applyPose(g);
   holdWeapons(g);
 }
 // face the camera every frame; pick front or back by which side of the pilgrim the camera is on
@@ -1040,6 +1094,7 @@ function chooseChar(k) {
   statusBtn.hidden = !(k >= 8);
   me.k = k; try { localStorage.setItem('sf-pilgrim', JSON.stringify(me)); } catch (e) { /* storage blocked */ }
   const vis = myAvatar.visible; scene.remove(myAvatar); myAvatar = makeAvatar(me.c, me.n, true, me.k); myAvatar.visible = vis; scene.add(myAvatar);
+  if (rideKind) setMount(myAvatar, rideKind);
   renderPicker(); sendPresence(true);
 }
 renderPicker();
@@ -1058,7 +1113,7 @@ function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTi
 
 function sendPresence(force) {
   if (!room) return;
-  const p = { n: me.n, c: me.c, k: me.k, w: walking ? 1 : 0, x: Math.round(myPos.x * 100) / 100, z: Math.round(myPos.z * 100) / 100, r: Math.round(myRot * 100) / 100 };
+  const p = { n: me.n, c: me.c, k: me.k, v: walking ? rideKind : 0, w: walking ? 1 : 0, x: Math.round(myPos.x * 100) / 100, z: Math.round(myPos.z * 100) / 100, r: Math.round(myRot * 100) / 100 };
   const key = JSON.stringify(p), now = performance.now();
   if (!force && (key === sentKey || now - lastSent < 90)) return;
   sentKey = key; lastSent = now; room.presence(p).catch(() => {});
@@ -1066,7 +1121,7 @@ function sendPresence(force) {
 function startWalk() {
   walking = true; myAvatar.visible = true; currentView = null;
   document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', 'false'));
-  walkBtn.setAttribute('aria-pressed', 'true'); walkBtn.textContent = '순례 그만'; bowBtn.disabled = candleBtn.disabled = danceBtn.disabled = false;
+  walkBtn.setAttribute('aria-pressed', 'true'); walkBtn.textContent = '순례 그만'; bowBtn.disabled = candleBtn.disabled = danceBtn.disabled = false; setFightEnabled(true);
   controls.minDistance = 2.5; controls.maxDistance = 70; controls.maxPolarAngle = Math.PI * .49;
   const t1 = myPos.clone().add(new THREE.Vector3(0, 1.5, 0));
   const back = new THREE.Vector3(-Math.sin(myRot), 0, -Math.cos(myRot)).multiplyScalar(11);
@@ -1076,6 +1131,7 @@ function startWalk() {
   sendPresence(true);
 }
 function stopWalk() {
+  setRide(0); setFightEnabled(false);
   walking = false; myAvatar.visible = false; dest = null; destMark.visible = false;
   walkBtn.setAttribute('aria-pressed', 'false'); walkBtn.textContent = '순례 시작'; bowBtn.disabled = candleBtn.disabled = danceBtn.disabled = true;
   hintEl.textContent = hint0; sendPresence(true);
@@ -1137,6 +1193,8 @@ function syncPeers(list) {
     v.tx = clampX(pr.x); v.tz = clampZ(pr.z); v.tr = Number.isFinite(pr.r) ? pr.r : 0; v.s = typeof pr.s === 'string' ? pr.s : null;
     if (pr.a === 'bow' && pr.t !== v.lastT) { v.lastT = pr.t; v.bowStart = performance.now(); }
     if (pr.a === 'dance' && pr.t !== v.lastT) { v.lastT = pr.t; v.danceStart = performance.now(); }
+    if ((pr.a === 'atk' || pr.a === 'sp') && pr.t !== v.lastT) { v.lastT = pr.t; startAttack(v.g, pr.a, k, color); }
+    v.ride = Number.isInteger(pr.v) && RIDES[pr.v] ? pr.v : 0;
   }
   for (const [k, v] of peerViews) if (!seen.has(k)) { scene.remove(v.g); peerViews.delete(k); }
   renderStatus();
@@ -1159,9 +1217,11 @@ function updatePeers(dt, now) {
     g.position.x += dx * a; g.position.z += dz * a;
     let dr = v.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * a;
     g.userData.body.position.y = moving && !g.userData.model3d ? Math.abs(Math.sin(now / 140)) * .08 : 0;
-    animate3D(g, moving, dt, Math.hypot(dx, dz) > 2);
+    if (g.userData.mount !== v.ride) setMount(g, v.ride);
+    animate3D(g, moving && !g.userData.mount, dt, Math.hypot(dx, dz) > 2);
     g.userData.body.rotation.x = bowAngle(v.bowStart, now);
     faceCamera(g, danceAnim(g.userData.body, v.danceStart, now));
+    postPose(g, now, Math.hypot(dx, dz) * a / Math.max(dt, 1e-3), 0);
   }
 }
 
@@ -1243,6 +1303,7 @@ canvas.addEventListener('pointerup', e => {
 const vF = new THREE.Vector3(), vR = new THREE.Vector3(), vMove = new THREE.Vector3(), vDelta = new THREE.Vector3();
 function updateWalk(dt, now) {
   if (!walking) return;
+  if (rideKind) { updateRide(dt, now); return; }
   const fwd = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0), side = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0);
   vMove.set(0, 0, 0);
   if (fwd || side) {
@@ -1264,6 +1325,7 @@ function updateWalk(dt, now) {
   animate3D(myAvatar, moving, dt, !!keys.shift);
   myAvatar.userData.body.rotation.x = bowAngle(bowStart, now);
   faceCamera(myAvatar, danceAnim(myAvatar.userData.body, danceStart, now));
+  postPose(myAvatar, now, 0, 0);
   setInside(insideAt(myPos.x, myPos.z));
   sendPresence(false);
 }
@@ -1390,6 +1452,7 @@ async function goSpot(id) {
 }
 function enterTour(id) {
   if (tourOn) { goSpot(id); return; }
+  setRide(0);
   tourOn = true; tip.hidden = true; wasWalking = walking;
   tourHidden = scene.children.filter(o => o.visible && !o.isLight && !o.userData.keepInTour);
   tourHidden.forEach(o => { o.visible = false; });
@@ -1563,6 +1626,357 @@ function updateChat(now) {
   for (const row of chatLog.children) row.classList.toggle('old', now - Number(row.dataset.at) > 20000);
 }
 
+
+// ---------- combat: attacks and special moves (procedural bone poses on the Meshy rig + light effects) ----------
+const ease = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
+const seg = (t, a, b) => ease((t - a) / (b - a));
+const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
+const _ax = new THREE.Vector3(), _fw = new THREE.Vector3(), _upV = new THREE.Vector3(0, 1, 0), _cam = new THREE.Vector3(), _p = new THREE.Vector3();
+// turn a bone about a world-space axis, whatever its local axes are
+function rotBone(bone, axis, ang) {
+  if (!bone || !ang || !bone.parent) return;
+  bone.getWorldQuaternion(_q1); _q2.setFromAxisAngle(axis, ang); _q1.premultiply(_q2);
+  bone.parent.getWorldQuaternion(_q3); bone.quaternion.copy(_q3.invert().multiply(_q1)); bone.updateMatrixWorld(true);
+}
+function startAttack(g, kind, k, color) {
+  const u = g.userData; if (u.mount >= 2) return; // nobody swings a spear from a sports car
+  const h = HERO[k];
+  u.atk = { kind, k, start: performance.now(), dur: kind === 'atk' ? .56 : (h ? h.dur : 1.8), f: {}, color: h ? h.color : color, name: h ? h.sp : '회오리 일격' };
+}
+// the attack timeline: arm angles (about the shoulder's sideways axis), weapon pitch, torso twist, lift, spin, lunge; fires effects on cue
+function atkState(g) {
+  const u = g.userData, a = u.atk; if (!a) return null;
+  const t = (performance.now() - a.start) / 1000;
+  if (t >= a.dur) { u.atk = null; return null; }
+  const fire = (key, fn) => { if (!a.f[key]) { a.f[key] = 1; fn(); } };
+  const s = { arm: 0, armL: 0, fore: 0, sw: 0, swL: 0, tw: 0, y: 0, spin: 0, lunge: 0 };
+  const P = g.position, yaw = g.rotation.y, C = a.color, near = nearMe(g);
+  let e;
+  if (a.kind === 'atk') {
+    if (t < .17) { e = seg(t, 0, .17); s.arm = -2.8 * e; s.sw = -1.1 * e; s.tw = .35 * e; }
+    else if (t < .3) { e = seg(t, .17, .3); s.arm = -2.8 + 2.2 * e; s.sw = -1.1 + 2.8 * e; s.tw = .35 - .8 * e; s.lunge = .35 * e; fire('slash', () => { slashFx(g, C); sfx('slash', near); }); }
+    else { e = seg(t, .3, a.dur); s.arm = -.6 * (1 - e); s.sw = 1.7 * (1 - e); s.tw = -.45 * (1 - e); s.lunge = .35 * (1 - e); }
+    if (a.k === 8) { s.armL = s.arm * .9; s.swL = s.sw; }
+    return s;
+  }
+  fire('name', () => { textFx(g, a.name, C); flashFx(P.x, 1.2, P.z, C); sfx('slash', near); });
+  switch (a.k) {
+    case 9: // leap, overhead slam, a green crescent of force rolls forward
+      if (t < .45) { e = seg(t, 0, .45); s.arm = -3 * e; s.sw = -1.2 * e; s.y = -.15 * e; s.tw = .3 * e; }
+      else if (t < .9) { e = seg(t, .45, .9); s.arm = -3; s.sw = -1.2; s.tw = .3; s.y = -.15 + 1.75 * Math.sin(e * Math.PI / 2); fire('aura', () => ringFx(P.x, P.z, C, 2.5, 600)); }
+      else if (t < 1.05) { e = seg(t, .9, 1.05); s.arm = -3 + 2.6 * e; s.sw = -1.2 + 3 * e; s.y = 1.6 * (1 - e); s.tw = .3 - .7 * e; s.lunge = .6 * e; }
+      else {
+        e = seg(t, 1.3, a.dur); s.arm = -.4 * (1 - e); s.sw = 1.8 * (1 - e); s.tw = -.4 * (1 - e); s.lunge = .6 * (1 - e);
+        fire('slam', () => { crescentFx(g, C, 18); ringFx(P.x, P.z, C, 7, 900); sparksFx(P.x + Math.sin(yaw), .3, P.z + Math.cos(yaw), C, 70, 7); shake(.7 * near); sfx('boom', near); });
+      }
+      break;
+    case 10: // raise the spear, stamp the ground: three roaring shockwaves
+      if (t < .6) { e = seg(t, 0, .6); s.arm = -2.9 * e; s.sw = -.2 * e; s.y = .35 * Math.sin(e * Math.PI / 2); }
+      else if (t < .75) { e = seg(t, .6, .75); s.arm = -2.9 + 1.9 * e; s.sw = -.2 + 1.5 * e; s.y = .35 * (1 - e);
+        fire('stomp', () => { ringFx(P.x, P.z, C, 9, 800); sparksFx(P.x, .2, P.z, '#ffd27a', 90, 8); shake(1.1 * near); sfx('boom', near); }); }
+      else { e = seg(t, 1.2, a.dur); s.arm = -1 * (1 - e); s.sw = 1.3 * (1 - e); }
+      if (t > .9) fire('r2', () => { ringFx(P.x, P.z, '#ffb347', 13, 900); sfx('boom', near * .6); });
+      if (t > 1.1) fire('r3', () => { ringFx(P.x, P.z, '#ff4a2a', 17, 1000); pillarFx(P.x, P.z, C, 7, 700); });
+      break;
+    case 11: { // seven lightning thrusts, then a spinning finish
+      if (t < .3) { e = seg(t, 0, .3); s.arm = -1.3 * e; s.sw = 1.45 * e; }
+      else if (t < 1.5) {
+        const p = (t - .3) / 1.2 * 7, i = Math.floor(p), th = Math.sin((p - i) * Math.PI);
+        s.arm = -1.3 - .3 * th; s.sw = 1.45; s.lunge = .15 + .55 * th;
+        fire('t' + i, () => { streakFx(g, C); sfx('slash', near * .7); });
+      } else {
+        e = seg(t, 1.5, a.dur); s.spin = e * Math.PI * 2; s.arm = -1.3 * (1 - e); s.sw = 1.45 * (1 - e); s.y = .4 * Math.sin(e * Math.PI);
+        fire('fin', () => { ringFx(P.x, P.z, C, 6, 700); sparksFx(P.x, 1, P.z, '#ffffff', 60, 6); shake(.4 * near); sfx('boom', near * .7); });
+      }
+      break;
+    }
+    case 8: // twin-sword whirl with golden blades orbiting, then a burst
+      if (t < .25) { e = seg(t, 0, .25); s.arm = s.armL = -1.4 * e; s.sw = s.swL = 1.5 * e; }
+      else if (t < 1.6) { e = seg(t, .25, 1.6); s.spin = e * Math.PI * 6; s.y = .25 * Math.sin(e * Math.PI); s.arm = s.armL = -1.4; s.sw = s.swL = 1.5; fire('blades', () => bladeRingFx(g, C, 1350)); }
+      else { e = seg(t, 1.6, a.dur); s.arm = s.armL = -1.4 * (1 - e); s.sw = s.swL = 1.5 * (1 - e);
+        fire('burst', () => { ringFx(P.x, P.z, C, 8, 800); pillarFx(P.x, P.z, C, 9, 800); sparksFx(P.x, 1, P.z, C, 80, 7); shake(.5 * near); sfx('boom', near); }); }
+      break;
+    default: // everyone else: a rising whirlwind
+      if (t < .3) { e = seg(t, 0, .3); s.arm = s.armL = -2.8 * e; }
+      else if (t < 1.3) { e = seg(t, .3, 1.3); s.arm = s.armL = -2.8; s.spin = e * Math.PI * 4; s.y = .6 * Math.sin(e * Math.PI); fire('pillar', () => pillarFx(P.x, P.z, C, 6, 1000)); }
+      else { e = seg(t, 1.3, a.dur); s.arm = s.armL = -2.8 * (1 - e); fire('burst', () => { ringFx(P.x, P.z, C, 6, 700); sparksFx(P.x, 1, P.z, C, 60, 6); shake(.3 * near); sfx('boom', near * .8); }); }
+  }
+  return s;
+}
+// called right after the walk clip is sampled: riding pose and attack pose on top of it
+function applyPose(g) {
+  const u = g.userData, B = u.bones; u.wSwing = null; if (!B) return;
+  g.updateMatrixWorld(true);
+  u.body.getWorldQuaternion(_q1); _ax.set(1, 0, 0).applyQuaternion(_q1); _fw.set(0, 0, 1).applyQuaternion(_q1);
+  const s = atkState(g);
+  if (u.mount === 1) { // astride the saddle: thighs forward and apart, shins down, hands on the reins
+    rotBone(B.LeftUpLeg, _ax, -1.35); rotBone(B.RightUpLeg, _ax, -1.35);
+    rotBone(B.LeftUpLeg, _fw, .4); rotBone(B.RightUpLeg, _fw, -.4);
+    rotBone(B.LeftLeg, _ax, 1.45); rotBone(B.RightLeg, _ax, 1.45);
+    if (!s) { rotBone(B.LeftArm, _ax, -.6); rotBone(B.RightArm, _ax, -.6); rotBone(B.LeftForeArm, _ax, -.7); rotBone(B.RightForeArm, _ax, -.7); }
+  }
+  if (!s) return;
+  rotBone(B.Spine02, _upV, s.tw);
+  rotBone(B.RightArm, _ax, s.arm); rotBone(B.LeftArm, _ax, s.armL);
+  u.wSwing = [s.sw, s.swL];
+}
+// after the per-frame body reset: lift, spin and lunge of the attack, then the ride
+function postPose(g, now, speed, accel) {
+  const u = g.userData, s = atkState(g), b = u.body;
+  if (s) { b.position.y += s.y; b.rotation.y += s.spin; b.position.z = s.lunge; } else b.position.z = 0;
+  rideVisual(g, now, speed, accel);
+  if (s || u.mount) holdWeapons(g);
+}
+function nearMe(g) { if (g === myAvatar) return 1; const d = g.position.distanceTo(myPos); return d > 45 ? 0 : 1 - d / 45; }
+
+// ---------- effects ----------
+const glowTex = (() => { const c = cv(64, 64), x = c.getContext('2d'), gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.3, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c); })();
+const fadeTex = (() => { const c = cv(4, 128), x = c.getContext('2d'), gr = x.createLinearGradient(0, 0, 0, 128);
+  gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(255,255,255,1)'); x.fillStyle = gr; x.fillRect(0, 0, 4, 128); return new THREE.CanvasTexture(c); })();
+const RING_GEO = new THREE.RingGeometry(.9, 1, 72).rotateX(-Math.PI / 2);
+const PILLAR_GEO = new THREE.CylinderGeometry(1, 1, 1, 40, 1, true).translate(0, .5, 0);
+const SLASH_GEO = new THREE.RingGeometry(1.05, 1.75, 48, 1, .3, 3.4).rotateY(Math.PI / 2);
+const CRESCENT_GEO = new THREE.RingGeometry(2.0, 2.45, 56, 1, .12, Math.PI - .24);
+const STREAK_GEO = new THREE.BoxGeometry(.07, .07, 3.4).translate(0, 0, 2.2);
+const FX = [];
+const addMat = (color, map) => new THREE.MeshBasicMaterial({ color, map: map || null, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+function addFx(o, dur, upd) { o.userData.keepInTour = true; o.renderOrder = 5; scene.add(o); const f = { o, s: performance.now(), dur, upd }; FX.push(f); upd(0, o, 0); }
+function updateFx(now, dt) {
+  const t = performance.now();
+  for (let i = FX.length - 1; i >= 0; i--) {
+    const f = FX[i], k = (t - f.s) / f.dur;
+    if (k >= 1) { scene.remove(f.o); f.o.traverse(x => { if (x.material) { if (x.userData.ownMap) x.material.map.dispose(); x.material.dispose(); } if (x.userData.ownGeo) x.geometry.dispose(); }); FX.splice(i, 1); continue; }
+    f.upd(k, f.o, dt);
+  }
+  const sb = document.getElementById('spBtn'); if (sb) {
+    const left = Math.ceil((spReady - t) / 1000), lab = left > 0 ? `필살기 ${left}초` : '필살기 (R)';
+    if (lab !== spLabel) { spLabel = lab; sb.textContent = lab; }
+  }
+}
+function ringFx(x, z, color, maxR, dur) {
+  const m = new THREE.Mesh(RING_GEO, addMat(color)); m.position.set(x, .07, z);
+  addFx(m, dur, k => { const r = .3 + maxR * (1 - Math.pow(1 - k, 3)); m.scale.set(r, 1, r); m.material.opacity = (1 - k) * .95; });
+}
+function pillarFx(x, z, color, h, dur) {
+  const m = new THREE.Mesh(PILLAR_GEO, addMat(color, fadeTex)); m.position.set(x, 0, z);
+  addFx(m, dur, k => { const r = .7 + .6 * k; m.scale.set(r, h * Math.min(1, k / .2), r); m.material.opacity = 1 - k; m.rotation.y += .12; });
+}
+function flashFx(x, y, z, color) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  s.position.set(x, y, z); addFx(s, 320, k => { const r = 1 + 7 * k; s.scale.set(r, r, 1); s.material.opacity = 1 - k; });
+}
+function slashFx(g, color) {
+  const m = new THREE.Mesh(SLASH_GEO, addMat(color)); m.position.copy(g.position); m.position.y = 1.2; m.rotation.y = g.rotation.y;
+  m.position.x += Math.sin(g.rotation.y) * .5; m.position.z += Math.cos(g.rotation.y) * .5;
+  addFx(m, 300, k => { const r = 1 + .35 * k; m.scale.set(r, r, r); m.material.opacity = (1 - k) * .9; });
+}
+function crescentFx(g, color, dist) {
+  const yaw = g.rotation.y, x0 = g.position.x, z0 = g.position.z, m = new THREE.Mesh(CRESCENT_GEO, addMat(color)); m.rotation.y = yaw;
+  addFx(m, 950, k => { const d = 1 + dist * k; m.position.set(x0 + Math.sin(yaw) * d, .05, z0 + Math.cos(yaw) * d); const r = 1 + .9 * k; m.scale.set(r, r, r); m.material.opacity = (k < .7 ? 1 : (1 - k) / .3) * .6; });
+  for (let i = 1; i <= 3; i++) setTimeout(() => ringFx(x0 + Math.sin(yaw) * dist * i / 3, z0 + Math.cos(yaw) * dist * i / 3, color, 2.2, 500), 950 * i / 3);
+}
+function streakFx(g, color) {
+  const m = new THREE.Mesh(STREAK_GEO, addMat(color)), yaw = g.rotation.y;
+  m.rotation.y = yaw + (Math.random() - .5) * .12; m.position.copy(g.position); m.position.y = 1.15 + (Math.random() - .5) * .35;
+  addFx(m, 240, k => { m.scale.set(1, 1, .4 + k * 1.2); m.material.opacity = 1 - k; });
+  flashFx(g.position.x + Math.sin(yaw) * 2.8, m.position.y, g.position.z + Math.cos(yaw) * 2.8, color);
+}
+function sparksFx(x, y, z, color, n, speed) {
+  const pos = new Float32Array(n * 3), vel = [];
+  for (let i = 0; i < n; i++) { pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z; const a = Math.random() * Math.PI * 2, u = Math.random();
+    vel.push([Math.cos(a) * speed * (.4 + u), 2 + Math.random() * speed * .8, Math.sin(a) * speed * (.4 + u)]); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color, size: .22, map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  pts.userData.ownGeo = true; pts.frustumCulled = false;
+  addFx(pts, 1100, (k, o, dt) => { const p = geo.attributes.position.array;
+    for (let i = 0; i < n; i++) { vel[i][1] -= 9.8 * dt; p[i * 3] += vel[i][0] * dt; p[i * 3 + 1] = Math.max(.02, p[i * 3 + 1] + vel[i][1] * dt); p[i * 3 + 2] += vel[i][2] * dt; }
+    geo.attributes.position.needsUpdate = true; pts.material.opacity = 1 - k; });
+}
+function bladeRingFx(g, color, dur) {
+  const grp = new THREE.Group();
+  for (let i = 0; i < 8; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    const a = i / 8 * Math.PI * 2; s.position.set(Math.cos(a) * 1.4, 1.1 + Math.sin(a * 2) * .15, Math.sin(a) * 1.4); s.scale.set(.7, .7, 1); grp.add(s); }
+  const ring = new THREE.Mesh(RING_GEO, addMat(color)); ring.position.y = 1.1; ring.scale.set(1.5, 1, 1.5); grp.add(ring);
+  addFx(grp, dur, (k, o, dt) => { grp.position.copy(g.position); grp.rotation.y += dt * 14; const op = k < .1 ? k / .1 : k > .8 ? (1 - k) / .2 : 1; grp.children.forEach(c => { c.material.opacity = op; }); });
+}
+function textFx(g, text, color) {
+  const c = cv(1024, 192), x = c.getContext('2d');
+  x.font = '800 96px "IBM Plex Sans KR", "Malgun Gothic", sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.lineWidth = 14; x.strokeStyle = 'rgba(10,6,2,.85)'; x.strokeText(text, 512, 96);
+  x.shadowColor = color; x.shadowBlur = 28; x.fillStyle = '#fffaf0'; x.fillText(text, 512, 96); x.shadowBlur = 0; x.fillStyle = color; x.globalAlpha = .35; x.fillText(text, 512, 96);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, fog: false })); s.userData.ownMap = true;
+  addFx(s, 1700, k => { s.position.copy(g.position); s.position.y = 3.1 + k * .8; const sc = k < .12 ? .6 + .4 * k / .12 : 1; s.scale.set(5.2 * sc, .975 * sc, 1); s.material.opacity = k > .7 ? (1 - k) / .3 : 1; });
+}
+function shake(a) { if (a <= 0) return; shakeT = performance.now(); shakeA = Math.max(a, shakeA * Math.max(0, 1 - (performance.now() - shakeT) / 500)); }
+const _sh = new THREE.Vector3();
+function shakeOffset(now) {
+  const k = (performance.now() - shakeT) / 550; if (k >= 1 || reduceMotion) return _sh.set(0, 0, 0);
+  const a = shakeA * (1 - k) * (1 - k) * .35; return _sh.set((Math.random() - .5) * a, (Math.random() - .5) * a, (Math.random() - .5) * a);
+}
+
+// ---------- sound: synthesized, no files ----------
+function ac() {
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+  if (actx.state === 'suspended') actx.resume().catch(() => {});
+  return actx;
+}
+function noiseBuf(c) {
+  if (!noiseBuf.b) { const b = c.createBuffer(1, c.sampleRate * 1.5, c.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; noiseBuf.b = b; }
+  return noiseBuf.b;
+}
+function sfx(kind, vol) {
+  if (!soundOn || !(vol > .02)) return; const c = ac(); if (!c) return;
+  const t = c.currentTime, src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+  src.buffer = noiseBuf(c); src.connect(f).connect(g).connect(c.destination);
+  if (kind === 'slash') {
+    f.type = 'bandpass'; f.Q.value = 1.3; f.frequency.setValueAtTime(500, t); f.frequency.exponentialRampToValueAtTime(4200, t + .18);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.22 * vol, t + .03); g.gain.exponentialRampToValueAtTime(.001, t + .26); src.start(t); src.stop(t + .3);
+  } else {
+    f.type = 'lowpass'; f.frequency.setValueAtTime(1000, t); f.frequency.exponentialRampToValueAtTime(60, t + .9);
+    g.gain.setValueAtTime(.5 * vol, t); g.gain.exponentialRampToValueAtTime(.001, t + 1.1); src.start(t); src.stop(t + 1.2);
+    const o = c.createOscillator(), og = c.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(34, t + .6);
+    og.gain.setValueAtTime(.45 * vol, t); og.gain.exponentialRampToValueAtTime(.001, t + .7); o.connect(og).connect(c.destination); o.start(t); o.stop(t + .75);
+  }
+}
+function engine(on) {
+  if (!on) { if (eng && actx) { const e = eng; e.g.gain.setTargetAtTime(0, actx.currentTime, .08); setTimeout(() => { try { e.o1.stop(); e.o2.stop(); } catch (_) { /* already stopped */ } }, 500); } eng = null; return; }
+  const c = ac(); if (!c || eng) return;
+  const o1 = c.createOscillator(), o2 = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+  o1.type = 'sawtooth'; o2.type = 'square'; f.type = 'lowpass'; f.frequency.value = 600; g.gain.value = 0;
+  o1.connect(f); o2.connect(f); f.connect(g).connect(c.destination); o1.start(); o2.start(); eng = { o1, o2, f, g };
+}
+function engineUpdate(R, v, thr) {
+  if (!eng || !R.gears) return;
+  const c = actx, span = R.boost / R.gears, sp = Math.abs(v), gear = Math.min(R.gears - 1, Math.floor(sp / span)), rpm = .22 + .78 * Math.min(1, (sp - gear * span) / span);
+  const f0 = 36 + rpm * 100 + gear * 4, now = c.currentTime;
+  eng.o1.frequency.setTargetAtTime(f0, now, .04); eng.o2.frequency.setTargetAtTime(f0 * .5, now, .04);
+  eng.f.frequency.setTargetAtTime(380 + rpm * (thr ? 1900 : 700), now, .08);
+  eng.g.gain.setTargetAtTime(soundOn ? (thr ? .07 : .035) : 0, now, .08);
+}
+
+// ---------- my controls ----------
+function setFightEnabled(on) {
+  document.getElementById('atkBtn').disabled = document.getElementById('spBtn').disabled = !on;
+  document.querySelectorAll('[data-ride]').forEach(b => { b.disabled = !on; });
+}
+function doAttack(kind) {
+  if (!walking) { toast('순례 시작을 누른 뒤 쓸 수 있어요'); return; }
+  if (rideKind >= 2) { toast('차에서 내려야 싸울 수 있어요 (E)'); return; }
+  const now = performance.now();
+  if (kind === 'atk') { if (now < atkReady || myAvatar.userData.atk) return; atkReady = now + 520; }
+  else { if (now < spReady) { toast(`필살기 재충전 중 · ${Math.ceil((spReady - now) / 1000)}초`); return; } if (myAvatar.userData.atk) return; spReady = now + 6000; }
+  startAttack(myAvatar, kind, me.k, me.c);
+  if (room) room.presence({ a: kind, t: Date.now() }).catch(() => {});
+}
+document.getElementById('atkBtn').addEventListener('click', () => doAttack('atk'));
+document.getElementById('spBtn').addEventListener('click', () => doAttack('sp'));
+document.querySelectorAll('[data-ride]').forEach(b => b.addEventListener('click', () => setRide(Number(b.dataset.ride))));
+document.getElementById('hudSound').addEventListener('click', e => { soundOn = !soundOn; e.currentTarget.textContent = soundOn ? '소리 끄기' : '소리 켜기'; });
+addEventListener('keydown', e => {
+  if (e.repeat || !walking || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.closest && e.target.closest('input,textarea')) return;
+  const k = e.key.toLowerCase();
+  if (k === 'f') doAttack('atk'); else if (k === 'r') doAttack('sp'); else if (k === 'e') setRide(rideKind ? 0 : lastRide);
+});
+
+// ---------- rides ----------
+const rideCache = {};
+function loadRide(k) {
+  const R = RIDES[k];
+  if (!rideCache[k]) rideCache[k] = new Promise(res => gltfLoader.load(`/models/${R.f}.glb?v=${ASSET_V}`, gl => {
+    const obj = gl.scene; obj.updateMatrixWorld(true);
+    let box = new THREE.Box3().setFromObject(obj); const size = box.getSize(new THREE.Vector3());
+    obj.scale.setScalar(R.len / Math.max(size.x, size.z));
+    obj.rotation.y = (size.x > size.z ? Math.PI / 2 : 0) + R.yaw; // long side along +z, nose forward
+    obj.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(obj); const c = box.getCenter(new THREE.Vector3());
+    obj.position.set(-c.x, -box.min.y, -c.z);
+    obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true;
+      if (R.rider) matte(o.material, .04); else for (const m of [].concat(o.material)) { if (m.emissive) { m.emissive.setRGB(0, 0, 0); m.emissiveMap = null; } m.envMapIntensity = 1.1; m.needsUpdate = true; } } });
+    const wrap = new THREE.Group(); wrap.add(obj); wrap.userData.h = box.max.y - box.min.y; res(wrap);
+  }, undefined, () => res(null)));
+  return rideCache[k];
+}
+function setMount(g, kind, force) {
+  const u = g.userData; if (u.mount === kind && !force) return;
+  if (u.vehicle && (u.mount !== kind || !kind)) { g.remove(u.vehicle); u.vehicle = null; }
+  u.mount = kind; u.body.visible = true; u.label.position.y = 2.15;
+  if (!kind || u.vehicle) return;
+  loadRide(kind).then(p => { if (!p || u.mount !== kind || u.vehicle) return; const v = p.clone(true); u.vehicle = v; g.add(v); });
+}
+function rideVisual(g, now, speed, accel) {
+  const u = g.userData, R = RIDES[u.mount], v = u.vehicle;
+  if (u.weapons) for (const wp of u.weapons) wp.visible = !R || R.rider;
+  if (!R) return;
+  const h = v ? v.userData.h : (R.rider ? 2 : 1.3), sp = Math.abs(speed);
+  if (R.rider) { // the horse bobs and rocks with its gait; the rider sits in the saddle
+    const f = Math.min(1, sp / 5), ph = now / 1000 * (1.6 + sp * .28) * Math.PI * 2, bob = Math.abs(Math.sin(ph)) * .14 * f;
+    if (v) { v.position.y = bob; v.rotation.x = Math.sin(ph) * .045 * f; }
+    u.body.visible = true; u.body.position.y += h * .66 - .98 + bob; u.label.position.y = 2.15 + h * .66 - .9;
+  } else { // the driver is inside: the car squats under power and leans into turns
+    u.body.visible = false;
+    if (v) { v.rotation.x = THREE.MathUtils.clamp(-accel * .004, -.04, .04); v.position.y = sp > 1 ? Math.sin(now / 37) * .004 : 0; }
+    u.label.position.y = h + .6;
+  }
+}
+function setRide(k) {
+  k = RIDES[k] ? k : 0;
+  if (k && (!walking || tourOn)) { if (tourOn) toast('실사 사진 속에서는 탈 수 없어요'); return; }
+  if (k === rideKind) return;
+  rideKind = k; if (k) lastRide = k; rideV = 0; rideSteer = 0; launchT0 = null; launchShown = false; dest = null; destMark.visible = false;
+  myAvatar.userData.atk = k >= 2 ? null : myAvatar.userData.atk;
+  setMount(myAvatar, k);
+  document.querySelectorAll('[data-ride]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.ride) === k)));
+  document.getElementById('rideHud').hidden = !k;
+  if (k) {
+    document.getElementById('hudName').textContent = RIDES[k].name; document.getElementById('hudLaunch').textContent = '0→100 측정 준비';
+    controls.maxDistance = 90; toast(`${RIDES[k].name}에 탔어요 · W 가속 · S 브레이크 · A/D 핸들 · Shift 부스트 · E 내리기`);
+  } else myAvatar.userData.body.visible = true;
+  engine(k >= 2);
+  sendPresence(true);
+}
+function updateRide(dt, now) {
+  const R = RIDES[rideKind];
+  const thr = !!(keys.w || keys.arrowup), brk = !!(keys.s || keys.arrowdown), st = (keys.a || keys.arrowleft ? 1 : 0) - (keys.d || keys.arrowright ? 1 : 0);
+  const top = keys.shift ? R.boost : R.vmax, drag = (.5 + .01 * rideV * rideV) * Math.sign(rideV);
+  let acc;
+  if (thr) acc = rideV < -.2 ? R.brake : R.acc * (1 - (rideV / top) * Math.abs(rideV / top));
+  else if (brk) acc = rideV > .2 ? -R.brake : (rideV > -R.vrev ? -R.rev : 0);
+  else acc = -drag * 1.6;
+  rideV += acc * dt; if (!thr && !brk && Math.abs(rideV) < .2) rideV = 0;
+  rideAcc = acc;
+  rideSteer += (st - rideSteer) * Math.min(1, dt * 6);
+  const grip = Math.min(1, Math.abs(rideV) / 3) / (1 + Math.abs(rideV) / 40);
+  myRot += rideSteer * R.turn * grip * (rideV < 0 ? -1 : 1) * dt;
+  const nx = myPos.x + Math.sin(myRot) * rideV * dt, nz = myPos.z + Math.cos(myRot) * rideV * dt, cx = clampX(nx), cz = clampZ(nz);
+  if (cx !== nx || cz !== nz) { if (Math.abs(rideV) > 8) { toast('쾅! 경계에 부딪혔어요'); shake(.6); sfx('boom', .5); } rideV *= -.15; }
+  vDelta.set(cx - myPos.x, 0, cz - myPos.z); myPos.x = cx; myPos.z = cz; camera.position.add(vDelta);
+  if (Math.abs(rideV) > 2 && !tween) { // chase camera settles in behind
+    const dist = (R.rider ? 6.5 : 8.5) + Math.abs(rideV) * .07, dir = rideV >= 0 ? 1 : -1;
+    _cam.set(myPos.x - Math.sin(myRot) * dist * dir, (R.rider ? 3.6 : 3) + Math.abs(rideV) * .02, myPos.z - Math.cos(myRot) * dist * dir);
+    camera.position.lerp(_cam, 1 - Math.exp(-dt * 2.4));
+  }
+  if (!tween) controls.target.set(myPos.x, R.rider ? 2 : 1.2, myPos.z);
+  myAvatar.position.copy(myPos); myAvatar.rotation.y = myRot;
+  const b = myAvatar.userData.body; b.position.y = 0; b.rotation.x = 0; b.rotation.y = 0;
+  animate3D(myAvatar, false, dt, false);
+  postPose(myAvatar, now, rideV, rideAcc);
+  // dashboard
+  const sp = Math.abs(rideV), kmh = Math.round(sp * 3.6);
+  document.getElementById('hudSpd').textContent = kmh;
+  document.getElementById('hudBar').style.width = Math.min(100, sp / R.boost * 100) + '%';
+  document.getElementById('hudGear').textContent = R.gears
+    ? (rideV < -.3 ? 'R' : sp < .3 ? 'N' : `${Math.min(R.gears, 1 + Math.floor(sp / (R.boost / R.gears)))}단`)
+    : (sp < .4 ? '정지' : sp < 2.5 ? '평보' : sp < 6 ? '속보' : sp < 11 ? '구보' : '습보');
+  if (sp < .3) { launchT0 = thr ? performance.now() : null; if (!thr && launchShown) launchShown = false; }
+  else if (launchT0 && !launchShown && sp >= 27.78) { launchShown = true; document.getElementById('hudLaunch').textContent = `0→100 ${((performance.now() - launchT0) / 1000).toFixed(1)}초`; }
+  engineUpdate(R, rideV, thr);
+  setInside(insideAt(myPos.x, myPos.z));
+  sendPresence(false);
+}
+
 // ---------- loop ----------
 applyTime(timeEl.value / 100); setPhase('now');
 const clock = new THREE.Clock();
@@ -1571,9 +1985,12 @@ renderer.setAnimationLoop((now) => {
   if (tween) { const k = Math.min(1, (now - tween.s) / tween.d), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
     camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e); if (k >= 1) tween = null; }
   if (tourOn) updateTour(now);
-  updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now);
+  updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now); updateFx(now, dt);
   controls.update(); if (walking && camera.position.y < .4) camera.position.y = .4;
-  if (!tourOn) doPick(); updateScreen(now); renderer.render(scene, camera); if (screenLive) cssRenderer.render(cssScene, camera);
+  if (!tourOn) doPick(); updateScreen(now);
+  const sh = shakeOffset(now); camera.position.add(sh);
+  renderer.render(scene, camera); if (screenLive) cssRenderer.render(cssScene, camera);
+  camera.position.sub(sh);
 });
 })();
 </script>
