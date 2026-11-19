@@ -54,6 +54,10 @@ button:disabled{opacity:.4;cursor:default}
 .status[data-live="1"]::before{background:#7fd38b;box-shadow:0 0 8px #7fd38b}
 .me-line{margin:8px 0 0;font-size:12px;color:var(--muted)}
 .me-line b{color:var(--ink);font-weight:500}
+.pick{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:8px}
+.pick button{padding:0;aspect-ratio:1;border-radius:50%;overflow:hidden;font-size:10px;display:grid;place-items:center}
+.pick button[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:1px;background:transparent}
+.pick img{width:100%;height:100%;object-fit:cover;display:block}
 #toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(16px + env(safe-area-inset-top,0px));z-index:6;background:var(--panel);
   border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:13px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);max-width:calc(100% - 32px)}
 #tip{position:fixed;pointer-events:none;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:10px;
@@ -161,6 +165,7 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
       <button id="candleBtn" disabled>초 밝히기</button>
     </div>
     <p class="me-line">내 이름 <b id="myName"></b></p>
+    <div class="pick" id="charPick" role="group" aria-label="캐릭터 고르기"></div>
   </div>
   <div>
     <p class="group-label">대형 화면</p>
@@ -890,16 +895,43 @@ function nameSprite(text, isMe) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
   s.scale.set(3.2, .6, 1); s.position.y = 2.25; return s;
 }
-function makeAvatar(color, name, isMe) {
+const CHARS = ['하준', '도윤', '서진', '이안', '태오', '민혁', '유찬'];
+const charTex = {};
+function charTextures(k) {
+  if (!charTex[k]) {
+    const ld = (side) => { const t = texLoader.load(`/avatars/${k}_${side}.webp`); t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso; return t; };
+    charTex[k] = { front: ld('front'), back: ld('back') };
+  }
+  return charTex[k];
+}
+function makeAvatar(color, name, isMe, k = 0) {
   const g = new THREE.Group(), body = new THREE.Group(); body.rotation.order = 'YXZ'; g.add(body);
-  const robeM = new THREE.MeshStandardMaterial({ color, roughness: .8 });
-  const robe = new THREE.Mesh(new THREE.ConeGeometry(.42, 1.25, 14), robeM); robe.position.y = .62; robe.castShadow = true; body.add(robe);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(.2, 14, 10), skinMat); head.position.y = 1.42; body.add(head);
-  const hood = new THREE.Mesh(new THREE.SphereGeometry(.23, 14, 10, 0, Math.PI * 2, 0, Math.PI * .55), robeM); hood.position.set(0, 1.45, -.04); hood.rotation.x = -.35; body.add(hood);
-  const lamp = new THREE.Mesh(new THREE.SphereGeometry(.08, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffd38a' })); lamp.position.set(.3, .9, .22); body.add(lamp);
+  if (k >= 1 && k <= CHARS.length) {
+    // billboard of the character sheet: turns to face the camera, shows the back when seen from behind
+    const tx = charTextures(k), bill = new THREE.Group(); body.add(bill);
+    const mat = new THREE.MeshLambertMaterial({ map: tx.front, transparent: true, alphaTest: .35, side: THREE.DoubleSide });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(.77, 1.75).translate(0, .875, 0), mat); bill.add(plane);
+    g.userData.bill = bill; g.userData.tx = tx; g.userData.mat = mat;
+  } else {
+    const robeM = new THREE.MeshStandardMaterial({ color, roughness: .8 });
+    const robe = new THREE.Mesh(new THREE.ConeGeometry(.42, 1.25, 14), robeM); robe.position.y = .62; robe.castShadow = true; body.add(robe);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(.2, 14, 10), skinMat); head.position.y = 1.42; body.add(head);
+    const hood = new THREE.Mesh(new THREE.SphereGeometry(.23, 14, 10, 0, Math.PI * 2, 0, Math.PI * .55), robeM); hood.position.set(0, 1.45, -.04); hood.rotation.x = -.35; body.add(hood);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(.08, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffd38a' })); lamp.position.set(.3, .9, .22); body.add(lamp);
+  }
   if (isMe) { const ring = new THREE.Mesh(new THREE.RingGeometry(.55, .68, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#e9a84c', transparent: true, opacity: .8 })); ring.position.y = .03; g.add(ring); }
   const label = nameSprite(isMe ? `${name} (나)` : name, isMe); g.add(label);
-  g.userData = { body, label, name }; return g;
+  g.userData.body = body; g.userData.label = label; g.userData.name = name; return g;
+}
+// face the camera every frame; pick front or back by which side of the pilgrim the camera is on
+const _bv = new THREE.Vector3();
+function faceCamera(g, dancing) {
+  const bill = g.userData.bill; if (!bill) return;
+  _bv.subVectors(camera.position, g.position);
+  const camYaw = Math.atan2(_bv.x, _bv.z), facing = g.rotation.y;
+  const front = Math.cos(camYaw - facing) >= 0, tx = g.userData.tx, mat = g.userData.mat;
+  const want = front ? tx.front : tx.back; if (mat.map !== want) { mat.map = want; mat.needsUpdate = true; }
+  bill.rotation.y = dancing ? 0 : camYaw - facing - g.userData.body.rotation.y;
 }
 
 const BOUNDS = { x0: -195, x1: 195, z0: -56, z1: 56 };
@@ -908,7 +940,23 @@ const insideAt = (x, z) => (Math.abs(x) < 22.5 && z > -30 && z < 45) || (Math.ab
 
 let walking = false, room = null, dest = null, lastSent = 0, sentKey = '', bowStart = -1e9, danceStart = -1e9;
 const myPos = new THREE.Vector3(62, 0, -2); let myRot = -Math.PI / 2;
-const myAvatar = makeAvatar(me.c, me.n, true); myAvatar.visible = false; scene.add(myAvatar);
+if (!(me.k >= 0 && me.k <= CHARS.length)) { me.k = 1 + Math.floor(Math.random() * CHARS.length); try { localStorage.setItem('sf-pilgrim', JSON.stringify(me)); } catch (e) { /* storage blocked */ } }
+let myAvatar = makeAvatar(me.c, me.n, true, me.k); myAvatar.visible = false; scene.add(myAvatar);
+const charPick = document.getElementById('charPick');
+function renderPicker() {
+  charPick.replaceChildren(...[0, ...CHARS.map((_, i) => i + 1)].map(k => {
+    const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-pressed', String(me.k === k));
+    b.title = k ? CHARS[k - 1] : '망토 순례자'; b.setAttribute('aria-label', b.title);
+    if (k) { const im = document.createElement('img'); im.src = `/avatars/${k}_face.webp`; im.alt = ''; b.append(im); } else b.textContent = '망토';
+    b.addEventListener('click', () => chooseChar(k)); return b;
+  }));
+}
+function chooseChar(k) {
+  me.k = k; try { localStorage.setItem('sf-pilgrim', JSON.stringify(me)); } catch (e) { /* storage blocked */ }
+  const vis = myAvatar.visible; scene.remove(myAvatar); myAvatar = makeAvatar(me.c, me.n, true, me.k); myAvatar.visible = vis; scene.add(myAvatar);
+  renderPicker(); sendPresence(true);
+}
+renderPicker();
 const destMark = new THREE.Mesh(new THREE.RingGeometry(.3, .45, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#f4ecdc', transparent: true, opacity: .7 }));
 destMark.visible = false; scene.add(destMark);
 const keys = {};
@@ -919,7 +967,7 @@ function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTi
 
 function sendPresence(force) {
   if (!room) return;
-  const p = { n: me.n, c: me.c, w: walking ? 1 : 0, x: Math.round(myPos.x * 100) / 100, z: Math.round(myPos.z * 100) / 100, r: Math.round(myRot * 100) / 100 };
+  const p = { n: me.n, c: me.c, k: me.k, w: walking ? 1 : 0, x: Math.round(myPos.x * 100) / 100, z: Math.round(myPos.z * 100) / 100, r: Math.round(myRot * 100) / 100 };
   const key = JSON.stringify(p), now = performance.now();
   if (!force && (key === sentKey || now - lastSent < 90)) return;
   sentKey = key; lastSent = now; room.presence(p).catch(() => {});
@@ -989,11 +1037,11 @@ function syncPeers(list) {
     const pr = p.presence || {};
     if (pr.w !== 1 || !Number.isFinite(pr.x) || !Number.isFinite(pr.z)) continue;
     seen.add(p.peer);
-    let v = peerViews.get(p.peer); const name = safeName(pr.n), color = safeColor(pr.c);
-    if (!v || v.name !== name || v.color !== color) {
+    let v = peerViews.get(p.peer); const name = safeName(pr.n), color = safeColor(pr.c), k = Number.isInteger(pr.k) && pr.k >= 0 && pr.k <= CHARS.length ? pr.k : 0;
+    if (!v || v.name !== name || v.color !== color || v.k !== k) {
       if (v) scene.remove(v.g);
-      const g = makeAvatar(color, name, false); g.position.set(clampX(pr.x), 0, clampZ(pr.z)); scene.add(g);
-      v = { g, name, color, lastT: pr.t, bowStart: -1e9, danceStart: -1e9, r: Number(pr.r) || 0 }; peerViews.set(p.peer, v);
+      const g = makeAvatar(color, name, false, k); g.position.set(clampX(pr.x), 0, clampZ(pr.z)); scene.add(g);
+      v = { g, name, color, k, lastT: pr.t, bowStart: -1e9, danceStart: -1e9, r: Number(pr.r) || 0 }; peerViews.set(p.peer, v);
     }
     v.tx = clampX(pr.x); v.tz = clampZ(pr.z); v.tr = Number.isFinite(pr.r) ? pr.r : 0;
     if (pr.a === 'bow' && pr.t !== v.lastT) { v.lastT = pr.t; v.bowStart = performance.now(); }
@@ -1020,7 +1068,7 @@ function updatePeers(dt, now) {
     let dr = v.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * a;
     g.userData.body.position.y = moving ? Math.abs(Math.sin(now / 140)) * .08 : 0;
     g.userData.body.rotation.x = bowAngle(v.bowStart, now);
-    danceAnim(g.userData.body, v.danceStart, now);
+    faceCamera(g, danceAnim(g.userData.body, v.danceStart, now));
   }
 }
 
@@ -1121,7 +1169,7 @@ function updateWalk(dt, now) {
   myAvatar.position.copy(myPos); myAvatar.rotation.y = myRot;
   myAvatar.userData.body.position.y = moving ? Math.abs(Math.sin(now / 140)) * .08 : 0;
   myAvatar.userData.body.rotation.x = bowAngle(bowStart, now);
-  danceAnim(myAvatar.userData.body, danceStart, now);
+  faceCamera(myAvatar, danceAnim(myAvatar.userData.body, danceStart, now));
   setInside(insideAt(myPos.x, myPos.z));
   sendPresence(false);
 }
