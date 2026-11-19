@@ -142,7 +142,7 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
       <button id="v-passion" data-view="passion" aria-pressed="false">수난 파사드</button>
       <button id="v-interior" data-view="interior" aria-pressed="false">내부</button>
     </div>
-    <button id="tourBtn" class="tour-btn">실사 360° 투어</button>
+    <button id="tourBtn" class="tour-btn">실사 속을 걷기</button>
   </div>
   <div>
     <div class="time-head"><p class="group-label">시간</p><output id="timeLabel" for="time">석양</output></div>
@@ -184,7 +184,7 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 </aside>
 <div id="hotspots"></div>
 <div id="tourBar" hidden>
-  <div class="tour-head"><div><b id="tourName"></b><br><span>드래그로 둘러보기 · 휠로 확대 · 표지를 눌러 이동 · Higgsfield AI 실사 360°</span></div>
+  <div class="tour-head"><div><b id="tourName"></b><br><span>WASD·바닥 클릭으로 걷기 · 드래그로 둘러보기 · 표지를 눌러 장소 이동 · Higgsfield AI 실사</span></div>
     <button id="tourExit">3D로 돌아가기</button></div>
   <div id="tourChips" role="group" aria-label="장소"></div>
 </div>
@@ -197,6 +197,8 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/objects/Sky.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/renderers/CSS3DRenderer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
 (() => {
 THREE.ColorManagement.legacyMode = false;
@@ -830,7 +832,7 @@ let tween = null, currentView = 'overview';
 function setInside(v) {
   if (v === inside) return; inside = v;
   if (!walking) { controls.maxPolarAngle = inside ? Math.PI * .97 : Math.PI * .49; controls.maxDistance = inside ? 40 : 1400; controls.minDistance = inside ? .1 : 3; }
-  else { controls.maxPolarAngle = inside ? Math.PI * .9 : Math.PI * .49; }
+  else if (!tourOn) { controls.maxPolarAngle = inside ? Math.PI * .9 : Math.PI * .49; }
   applyInterior();
 }
 function setView(key) {
@@ -893,7 +895,7 @@ function nameSprite(text, isMe) {
   g.fillStyle = isMe ? '#20160b' : '#f4ecdc'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 256, 47);
   const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
-  s.scale.set(3.2, .6, 1); s.position.y = 2.25; return s;
+  s.scale.set(2.2, .41, 1); s.position.y = 2.15; return s;
 }
 const CHARS = ['하준', '도윤', '서진', '이안', '태오', '민혁', '유찬'];
 const charTex = {};
@@ -920,13 +922,43 @@ function makeAvatar(color, name, isMe, k = 0) {
     const lamp = new THREE.Mesh(new THREE.SphereGeometry(.08, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffd38a' })); lamp.position.set(.3, .9, .22); body.add(lamp);
   }
   if (isMe) { const ring = new THREE.Mesh(new THREE.RingGeometry(.55, .68, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#e9a84c', transparent: true, opacity: .8 })); ring.position.y = .03; g.add(ring); }
-  const label = nameSprite(isMe ? `${name} (나)` : name, isMe); g.add(label);
+  const label = nameSprite(isMe ? `${name} (나)` : name, isMe); g.add(label); g.userData.keepInTour = true;
+  if (k >= 1 && k <= CHARS.length) queueMicrotask(() => upgradeTo3D(g, k));
   g.userData.body = body; g.userData.label = label; g.userData.name = name; return g;
+}
+
+// ---------- rigged 3D characters (Meshy GLB with a walk clip); the billboard shows until the model arrives ----------
+const gltfLoader = new THREE.GLTFLoader();
+const modelCache = {};
+function loadCharModel(k) {
+  if (!modelCache[k]) modelCache[k] = new Promise(res => gltfLoader.load(`/models/${k}.glb?v=${ASSET_V}`, g => res(g), undefined, () => res(null)));
+  return modelCache[k];
+}
+function upgradeTo3D(g, k) {
+  loadCharModel(k).then(gltf => {
+    if (!gltf) return;
+    const model = THREE.SkeletonUtils.clone(gltf.scene);
+    // Meshy rigs at the requested height (1.78 m) with feet at y = 0, so the model is used as delivered
+    model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+    if (g.userData.bill) g.userData.bill.visible = false;
+    g.userData.body.add(model);
+    const mixer = new THREE.AnimationMixer(model), clip = gltf.animations[0];
+    const action = clip ? mixer.clipAction(clip) : null;
+    if (action) { action.play(); action.paused = true; }
+    Object.assign(g.userData, { model3d: model, mixer, walkAction: action });
+  });
+}
+function animate3D(g, moving, dt, fast) {
+  const u = g.userData; if (!u.mixer || !u.walkAction) return;
+  const a = u.walkAction;
+  if (moving) { a.paused = false; a.timeScale = fast ? 2.6 : 1.6; }
+  else { a.paused = true; a.time = 0; }
+  u.mixer.update(dt);
 }
 // face the camera every frame; pick front or back by which side of the pilgrim the camera is on
 const _bv = new THREE.Vector3();
 function faceCamera(g, dancing) {
-  const bill = g.userData.bill; if (!bill) return;
+  const bill = g.userData.bill; if (!bill || g.userData.model3d) return;
   _bv.subVectors(camera.position, g.position);
   const camYaw = Math.atan2(_bv.x, _bv.z), facing = g.rotation.y;
   const front = Math.cos(camYaw - facing) >= 0, tx = g.userData.tx, mat = g.userData.mat;
@@ -958,7 +990,7 @@ function chooseChar(k) {
 }
 renderPicker();
 const destMark = new THREE.Mesh(new THREE.RingGeometry(.3, .45, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#f4ecdc', transparent: true, opacity: .7 }));
-destMark.visible = false; scene.add(destMark);
+destMark.visible = false; destMark.userData.keepInTour = true; scene.add(destMark);
 const keys = {};
 const walkBtn = document.getElementById('walkBtn'), bowBtn = document.getElementById('bowBtn'), candleBtn = document.getElementById('candleBtn'), danceBtn = document.getElementById('danceBtn');
 const hintEl = document.getElementById('hint'), hint0 = hintEl.textContent;
@@ -1005,7 +1037,7 @@ function placeCandle(x, z) {
   const g = new THREE.Group(); g.position.set(clampX(x), 0, clampZ(z));
   const wax = new THREE.Mesh(waxGeo, waxMat); wax.position.y = .175; g.add(wax);
   const f = new THREE.Sprite(flameMat); f.scale.set(.55, .7, 1); f.position.y = .5; g.add(f);
-  g.userData = { born: performance.now(), flame: f }; scene.add(g); candles.push(g);
+  g.userData = { born: performance.now(), flame: f, keepInTour: true }; scene.add(g); candles.push(g);
   while (candles.length > 80) { const o = candles.shift(); scene.remove(o); }
 }
 candleBtn.addEventListener('click', () => {
@@ -1066,7 +1098,8 @@ function updatePeers(dt, now) {
     const g = v.g, dx = v.tx - g.position.x, dz = v.tz - g.position.z, moving = Math.hypot(dx, dz) > .05;
     g.position.x += dx * a; g.position.z += dz * a;
     let dr = v.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * a;
-    g.userData.body.position.y = moving ? Math.abs(Math.sin(now / 140)) * .08 : 0;
+    g.userData.body.position.y = moving && !g.userData.model3d ? Math.abs(Math.sin(now / 140)) * .08 : 0;
+    animate3D(g, moving, dt, Math.hypot(dx, dz) > 2);
     g.userData.body.rotation.x = bowAngle(v.bowStart, now);
     faceCamera(g, danceAnim(g.userData.body, v.danceStart, now));
   }
@@ -1159,15 +1192,16 @@ function updateWalk(dt, now) {
   } else if (dest) { vMove.subVectors(dest, myPos).setY(0); if (vMove.length() < .3) { dest = null; destMark.visible = false; vMove.set(0, 0, 0); } }
   const moving = vMove.lengthSq() > 0;
   if (moving && !tween) {
-    const step = Math.min(vMove.length(), (keys.shift ? 15 : 6) * dt); vMove.normalize().multiplyScalar(step);
-    const nx = clampX(myPos.x + vMove.x), nz = clampZ(myPos.z + vMove.z);
+    const step = Math.min(vMove.length(), (keys.shift ? 9 : 3.4) * dt); vMove.normalize().multiplyScalar(step);
+    const [nx, nz] = clampToSpot(myPos.x + vMove.x, myPos.z + vMove.z);
     vDelta.set(nx - myPos.x, 0, nz - myPos.z); myPos.x = nx; myPos.z = nz;
     camera.position.add(vDelta); controls.target.add(vDelta);
     const want = Math.atan2(vMove.x, vMove.z); let dr = want - myRot; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); myRot += dr * Math.min(1, dt * 10);
   }
   if (!tween) controls.target.set(myPos.x, 1.5, myPos.z);
   myAvatar.position.copy(myPos); myAvatar.rotation.y = myRot;
-  myAvatar.userData.body.position.y = moving ? Math.abs(Math.sin(now / 140)) * .08 : 0;
+  myAvatar.userData.body.position.y = moving && !myAvatar.userData.model3d ? Math.abs(Math.sin(now / 140)) * .08 : 0;
+  animate3D(myAvatar, moving, dt, !!keys.shift);
   myAvatar.userData.body.rotation.x = bowAngle(bowStart, now);
   faceCamera(myAvatar, danceAnim(myAvatar.userData.body, danceStart, now));
   setInside(insideAt(myPos.x, myPos.z));
@@ -1208,33 +1242,60 @@ document.getElementById('galPrev').addEventListener('click', () => showPhoto(gal
 document.getElementById('galNext').addEventListener('click', () => showPhoto(galAt + 1));
 
 
-// ---------- photoreal 360° tour: Higgsfield panoramas placed at real spots of the model ----------
+// ---------- photoreal walk: Higgsfield 360° photos projected onto the ground so 3D pilgrims can walk inside them ----------
 const SPOTS = [
-  { id: 'nativity', name: '탄생의 파사드 앞', x: 80, z: -2, f: [-1, 0] },
-  { id: 'passion', name: '수난의 파사드 앞', x: -80, z: -2, f: [1, 0] },
-  { id: 'glory', name: '영광의 파사드 앞', x: 0, z: 95, f: [0, -1] },
-  { id: 'nave', name: '신랑 중앙', x: 0, z: 25, f: [0, -1] },
-  { id: 'crossing', name: '교차부', x: 0, z: -2, f: [0, -1] },
-  { id: 'altar', name: '제단 앞', x: 0, z: -24, f: [0, -1] },
+  { id: 'nativity', name: '탄생의 파사드 앞', x: 80, z: -2, f: [-1, 0], r: 8 },
+  { id: 'passion', name: '수난의 파사드 앞', x: -80, z: -2, f: [1, 0], r: 8 },
+  { id: 'glory', name: '영광의 파사드 앞', x: 0, z: 95, f: [0, -1], r: 8 },
+  { id: 'nave', name: '신랑 중앙', x: 0, z: 25, f: [0, -1], r: 4.5 },
+  { id: 'crossing', name: '교차부', x: 0, z: -2, f: [0, -1], r: 4.5 },
+  { id: 'altar', name: '제단 앞', x: 0, z: -24, f: [0, -1], r: 4 },
 ];
 const VIEW_SPOT = { overview: 'glory', nativity: 'nativity', passion: 'passion', interior: 'nave' };
-const panoScene = new THREE.Scene();
-const panoGeo = new THREE.SphereGeometry(500, 96, 48); panoGeo.scale(-1, 1, 1);
-const mkPano = () => { const m = new THREE.Mesh(panoGeo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, toneMapped: false, depthWrite: false })); panoScene.add(m); return m; };
+const PANO_EYE = 1.6; // camera height the panoramas were shot from
+const ASSET_V = '3'; // bump when panoramas, models or sprites are replaced so browsers fetch the new files
+const panoShader = {
+  vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+  fragmentShader: `uniform sampler2D map; uniform vec3 C; uniform float yaw; uniform float op; uniform float gR; varying vec3 vW;
+    const float PI = 3.14159265;
+    void main(){
+      vec3 rd = normalize(vW - cameraPosition);
+      vec3 far = normalize(vW - C), dir = far;
+      if (rd.y < -0.0005) {                       // below the horizon: hit the real ground, look that point up from where the photo was taken
+        vec3 Q = cameraPosition + rd * (-cameraPosition.y / rd.y);
+        dir = normalize(mix(normalize(Q - C), far, smoothstep(gR * 0.75, gR, length(Q.xz - C.xz))));
+      }
+      float a = atan(dir.z, dir.x) - yaw;
+      vec2 uv = vec2(fract(a / (2.0 * PI) + 0.5), asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5);
+      gl_FragColor = linearToOutputTexel(vec4(texture2D(map, uv).rgb, op));
+    }`,
+};
+const panoGeo = new THREE.SphereGeometry(90, 64, 32);
+function mkPano() {
+  const m = new THREE.Mesh(panoGeo, new THREE.ShaderMaterial({
+    uniforms: { map: { value: null }, C: { value: new THREE.Vector3() }, yaw: { value: 0 }, op: { value: 0 }, gR: { value: 30 } },
+    vertexShader: panoShader.vertexShader, fragmentShader: panoShader.fragmentShader, side: THREE.BackSide, transparent: true, depthWrite: false, fog: false,
+  }));
+  m.renderOrder = -3; m.visible = false; m.userData.keepInTour = true; scene.add(m); return m;
+}
 let panoFront = mkPano(), panoBack = mkPano();
+const shadowDisk = new THREE.Mesh(new THREE.CircleGeometry(16, 48).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: .28 }));
+shadowDisk.receiveShadow = true; shadowDisk.visible = false; shadowDisk.userData.keepInTour = true; scene.add(shadowDisk);
 const panoTex = {};
-let tourOn = false, tourSpot = null, fade = null, savedCam = null;
+let tourOn = false, tourSpot = null, fade = null, tourHidden = [], tourFog = null, wasWalking = false;
 const hotLayer = document.getElementById('hotspots'), tourBar = document.getElementById('tourBar'), tourName = document.getElementById('tourName'), tourChips = document.getElementById('tourChips');
 const tourBtn = document.getElementById('tourBtn');
 function loadPano(id) {
-  if (!panoTex[id]) panoTex[id] = new Promise(res => texLoader.load(`/panos/${id}.jpg`, t => { t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso; res(t); }, undefined, () => { delete panoTex[id]; res(null); }));
+  if (!panoTex[id]) panoTex[id] = new Promise(res => texLoader.load(`/panos/${id}.jpg?v=${ASSET_V}`, t => {
+    t.encoding = THREE.sRGBEncoding; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; t.wrapS = THREE.RepeatWrapping; res(t);
+  }, undefined, () => { delete panoTex[id]; res(null); }));
   return panoTex[id];
 }
 const peopleAt = (id) => room ? room.peers().filter(p => p.presence && p.presence.s === id).length : 0;
 function refreshTourUI() {
   tourChips.replaceChildren(...SPOTS.map(s => {
     const b = document.createElement('button'); const n = peopleAt(s.id);
-    b.textContent = n ? `${s.name} · ${n}명` : s.name; b.setAttribute('aria-pressed', String(tourSpot && tourSpot.id === s.id));
+    b.textContent = n ? `${s.name} · ${n}명` : s.name; b.setAttribute('aria-pressed', String(!!tourSpot && tourSpot.id === s.id));
     b.addEventListener('click', () => goSpot(s.id)); return b;
   }));
   hotLayer.replaceChildren(...(tourOn && tourSpot ? SPOTS.filter(s => s.id !== tourSpot.id).map(s => {
@@ -1242,64 +1303,78 @@ function refreshTourUI() {
     b.textContent = n ? `${s.name} · ${n}명` : s.name; b.dataset.spot = s.id; b.addEventListener('click', () => goSpot(s.id)); return b;
   }) : []));
 }
+function placeSpot(s, t) {
+  const m = panoBack;
+  m.material.uniforms.map.value = t; m.material.uniforms.C.value.set(s.x, PANO_EYE, s.z);
+  m.material.uniforms.yaw.value = Math.atan2(s.f[1], s.f[0]); m.material.uniforms.gR.value = s.r < 6 ? 2.2 : s.r * 1.8; // interiors: columns stand close, so project only the floor right under the pilgrim
+  m.position.set(s.x, 0, s.z); m.visible = true;
+  fade = { s: performance.now(), d: reduceMotion ? 1 : 600, from: panoFront, to: panoBack };
+  [panoFront, panoBack] = [panoBack, panoFront];
+  shadowDisk.position.set(s.x, .01, s.z); shadowDisk.visible = true;
+}
 async function goSpot(id) {
-  const s = SPOTS.find(p => p.id === id); if (!s || (tourSpot && tourSpot.id === id && !fade)) return;
+  const s = SPOTS.find(p => p.id === id); if (!s) return;
   toast(`${s.name} 사진을 불러오는 중`);
   const t = await loadPano(id);
   if (!t) { toast('이 장소의 사진을 불러오지 못했어요'); return; }
   if (!tourOn) return;
   toastEl.hidden = true;
-  tourSpot = s; tourName.textContent = s.name;
-  panoBack.material.map = t; panoBack.material.needsUpdate = true;
-  panoBack.rotation.y = Math.atan2(s.f[1], -s.f[0]);
-  fade = { s: performance.now(), d: reduceMotion ? 1 : 700, from: panoFront, to: panoBack };
-  [panoFront, panoBack] = [panoBack, panoFront];
-  camera.position.set(-s.f[0] * .1, -.012, -s.f[1] * .1); controls.target.set(0, 0, 0);
+  tourSpot = s; tourName.textContent = s.name; placeSpot(s, t);
+  // stand a couple of metres in front of where the photo was taken, facing what the photo looks at
+  const nx = s.x + s.f[0] * 2, nz = s.z + s.f[1] * 2, dx = nx - myPos.x, dz = nz - myPos.z;
+  myPos.set(nx, 0, nz); myRot = Math.atan2(s.f[0], s.f[1]); dest = null; destMark.visible = false;
+  camera.position.set(nx - s.f[0] * 4.5, 2.1, nz - s.f[1] * 4.5); controls.target.set(nx, 1.5, nz); tween = null;
+  void dx; void dz;
   if (room) room.presence({ s: id }).catch(() => {});
-  refreshTourUI();
+  sendPresence(true); refreshTourUI();
 }
 function enterTour(id) {
   if (tourOn) { goSpot(id); return; }
-  if (walking) stopWalk();
-  tween = null; tourOn = true; tip.hidden = true;
-  savedCam = { p: camera.position.clone(), t: controls.target.clone(), fov: camera.fov, min: controls.minDistance, max: controls.maxDistance, minP: controls.minPolarAngle, maxP: controls.maxPolarAngle };
-  Object.assign(controls, { minDistance: .1, maxDistance: .1, enableZoom: false, enablePan: false, rotateSpeed: -.35, minPolarAngle: .12, maxPolarAngle: Math.PI - .12 });
-  camera.fov = 75; camera.updateProjectionMatrix();
+  tourOn = true; tip.hidden = true; wasWalking = walking;
+  tourHidden = scene.children.filter(o => o.visible && !o.isLight && !o.userData.keepInTour);
+  tourHidden.forEach(o => { o.visible = false; });
+  tourFog = scene.fog; scene.fog = null;
+  if (!walking) startWalk();
+  // keep the camera near the height the photo was taken from, so floor projection stays believable
+  Object.assign(controls, { minPolarAngle: Math.PI * .38, maxPolarAngle: Math.PI * .6, minDistance: 2.5, maxDistance: 6 });
   document.body.classList.add('touring'); tourBar.hidden = false;
   goSpot(id);
 }
 function exitTour() {
   if (!tourOn) return;
   tourOn = false; tourSpot = null; fade = null;
-  panoFront.material.opacity = panoBack.material.opacity = 0;
-  Object.assign(controls, { minDistance: savedCam.min, maxDistance: savedCam.max, enableZoom: true, enablePan: true, rotateSpeed: 1, minPolarAngle: savedCam.minP, maxPolarAngle: savedCam.maxP });
-  camera.position.copy(savedCam.p); controls.target.copy(savedCam.t); camera.fov = savedCam.fov; camera.updateProjectionMatrix();
+  panoFront.visible = panoBack.visible = false; panoFront.material.uniforms.op.value = panoBack.material.uniforms.op.value = 0; shadowDisk.visible = false;
+  tourHidden.forEach(o => { o.visible = true; }); tourHidden = [];
+  scene.fog = tourFog;
   document.body.classList.remove('touring'); tourBar.hidden = true; hotLayer.replaceChildren();
   if (room) room.presence({ s: null }).catch(() => {});
+  controls.minPolarAngle = 0;
+  if (!wasWalking) stopWalk(); else { controls.maxDistance = 70; controls.minDistance = 2.5; controls.maxPolarAngle = Math.PI * .49; }
+}
+// keep the pilgrim on the photographed floor
+function clampToSpot(x, z) {
+  if (!tourOn || !tourSpot) return [clampX(x), clampZ(z)];
+  const dx = x - tourSpot.x, dz = z - tourSpot.z, d = Math.hypot(dx, dz);
+  return d <= tourSpot.r ? [x, z] : [tourSpot.x + dx / d * tourSpot.r, tourSpot.z + dz / d * tourSpot.r];
 }
 tourBtn.addEventListener('click', () => enterTour(VIEW_SPOT[currentView] || 'nativity'));
-document.getElementById('tourExit').addEventListener('click', exitTour);
-canvas.addEventListener('wheel', e => {
-  if (!tourOn) return; e.preventDefault();
-  camera.fov = THREE.MathUtils.clamp(camera.fov + e.deltaY * .03, 30, 95); camera.updateProjectionMatrix();
-}, { passive: false });
-addEventListener('keydown', e => { if (tourOn && e.key === 'Escape') exitTour(); });
+document.getElementById('tourExit').addEventListener('click', () => { exitTour(); setView('overview'); });
+addEventListener('keydown', e => { if (tourOn && e.key === 'Escape' && chatForm.hidden) { exitTour(); setView('overview'); } });
 const hotV = new THREE.Vector3();
 function updateTour(now) {
   if (fade) {
     const k = Math.min(1, (now - fade.s) / fade.d);
-    fade.to.material.opacity = k; fade.from.material.opacity = 1 - k;
-    if (k >= 1) fade = null;
+    fade.to.material.uniforms.op.value = k; fade.from.material.uniforms.op.value = 1 - k;
+    if (k >= 1) { fade.from.visible = false; fade = null; }
   }
   if (!tourSpot) return;
   for (const el of hotLayer.children) {
     const s = SPOTS.find(p => p.id === el.dataset.spot); const dx = s.x - tourSpot.x, dz = s.z - tourSpot.z, d = Math.hypot(dx, dz);
-    hotV.set(dx / d * 40, -1.6 / d * 40 - 2, dz / d * 40).project(camera);
+    hotV.set(tourSpot.x + dx / d * 30, 1.2, tourSpot.z + dz / d * 30).project(camera);
     const vis = hotV.z < 1 && Math.abs(hotV.x) < 1.05 && Math.abs(hotV.y) < 1.05;
     el.style.display = vis ? '' : 'none';
     if (vis) { el._x = (hotV.x + 1) / 2 * innerWidth; el._y = (1 - hotV.y) / 2 * innerHeight; }
   }
-  // keep labels that point the same way from sitting on top of each other
   const shown = [...hotLayer.children].filter(el => el.style.display !== 'none').sort((a, b) => a._x - b._x);
   const placed = [];
   for (const el of shown) {
@@ -1435,10 +1510,10 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.min(clock.getDelta(), .05);
   if (tween) { const k = Math.min(1, (now - tween.s) / tween.d), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
     camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e); if (k >= 1) tween = null; }
-  if (tourOn) { updateTour(now); updateScreen(now); updateChat(now); controls.update(); renderer.render(panoScene, camera); return; }
+  if (tourOn) updateTour(now);
   updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now);
   controls.update(); if (walking && camera.position.y < .4) camera.position.y = .4;
-  doPick(); updateScreen(now); renderer.render(scene, camera); if (screenLive) cssRenderer.render(cssScene, camera);
+  if (!tourOn) doPick(); updateScreen(now); renderer.render(scene, camera); if (screenLive) cssRenderer.render(cssScene, camera);
 });
 })();
 </script>

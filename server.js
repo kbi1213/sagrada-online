@@ -14,9 +14,9 @@ const CANDLE_TTL_MS = 10 * 60 * 1000;
 const CANDLES_PER_CHANNEL = 200;
 const DEFAULT_VIDEO = 'Za3A_9Plm5A'; // big screen in the nave plays this until someone changes it
 const INDEX = path.join(__dirname, 'public', 'index.html');
-const STATIC_RE = /^\/(textures|photos|panos|avatars)\/[a-z0-9_-]+\.(jpg|png|webp)$/;
+const STATIC_RE = /^\/(textures|photos|panos|avatars|models)\/[a-z0-9_-]+\.(jpg|png|webp|glb)$/;
 const SPOTS = new Set(['nativity', 'passion', 'glory', 'nave', 'crossing', 'altar']); // 360° tour spots
-const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
+const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.glb': 'model/gltf-binary' };
 
 // ---------- http ----------
 const server = http.createServer((req, res) => {
