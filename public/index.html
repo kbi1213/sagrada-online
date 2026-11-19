@@ -1019,7 +1019,7 @@ function matte(m, metal) {
   for (const x of Array.isArray(m) ? m : [m]) {
     if (!x || x.userData.matte) continue; x.userData.matte = true;
     if (x.emissive) { x.emissive.setRGB(0, 0, 0); x.emissiveMap = null; x.emissiveIntensity = 0; }
-    if ('metalness' in x) { x.metalness = metal; x.roughness = 1; x.envMapIntensity = .55; }
+    if ('metalness' in x) { x.metalness = metal; x.roughness = 1; x.envMapIntensity = .32; }
     x.flatShading = false; x.needsUpdate = true;
   }
 }
@@ -1076,30 +1076,24 @@ function attachWeapons(g, model, w) {
     g.userData.weapons = hands.map((bone, i) => { const wp = proto.clone(true); wp.userData.bone = bone; wp.userData.side = i; g.add(wp); return wp; });
   });
 }
-const _hp = new THREE.Vector3(), _hw = new THREE.Vector3(), _hv = new THREE.Vector3(), _ha = new THREE.Vector3();
+const _hp = new THREE.Vector3(), _hw = new THREE.Vector3(), _qh = new THREE.Quaternion(), _qg = new THREE.Quaternion(), _qd = new THREE.Quaternion(), _eu = new THREE.Euler(0, 0, 0, 'YXZ');
+// The weapon is a rigid body in the fist: its rotation relative to the hand bone is measured once while the hero stands in the
+// grip pose (shaft upright), and from then on world rotation = hand rotation x that fixed offset, so it swings with the wrist.
 function holdWeapons(g) {
-  const ws = g.userData.weapons; if (!ws) return;
-  g.updateMatrixWorld(true);
-  const t = performance.now(), yaw = g.rotation.y, cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const u = g.userData, ws = u.weapons; if (!ws) return;
+  g.updateMatrixWorld(true); g.getWorldQuaternion(_qg); _qg.invert();
+  const canCalibrate = u.model3d && !u.mount && !u.atk && u.walkAction && u.walkAction.paused;
   for (const wp of ws) {
-    wp.userData.bone.getWorldPosition(_hw); _hp.copy(_hw); g.worldToLocal(_hp);
-    wp.position.copy(_hp);
-    // inertia: a long pole lags behind the hand. Spring-damper on pitch/roll, driven by the hand's acceleration in the body frame.
-    const d = wp.userData.dyn || (wp.userData.dyn = { x: 0, z: 0, vx: 0, vz: 0, p: null, vel: new THREE.Vector3(), t });
-    if (t !== d.t) {
-      const dt = Math.min(.05, Math.max(.004, (t - d.t) / 1000)); d.t = t;
-      if (d.p && d.p.distanceTo(_hw) < 3) {
-        _hv.subVectors(_hw, d.p).divideScalar(dt); _ha.subVectors(_hv, d.vel).divideScalar(dt).clampLength(0, 40); d.vel.copy(_hv);
-        const ax = _ha.x * cy - _ha.z * sy, az = _ha.x * sy + _ha.z * cy; // world -> body frame
-        const tx = THREE.MathUtils.clamp(-az * .014, -.45, .45), tz = THREE.MathUtils.clamp(ax * .014, -.45, .45);
-        d.vx += (-38 * (d.x - tx) - 5.5 * d.vx) * dt; d.vz += (-38 * (d.z - tz) - 5.5 * d.vz) * dt;
-        d.x += d.vx * dt; d.z += d.vz * dt;
-      } else d.vel.set(0, 0, 0);
-      d.p = (d.p || new THREE.Vector3()).copy(_hw);
+    const bone = wp.userData.bone;
+    bone.getWorldPosition(_hw); _hp.copy(_hw); g.worldToLocal(_hp); wp.position.copy(_hp);
+    bone.getWorldQuaternion(_qh);
+    if (!wp.userData.off && canCalibrate) {
+      _eu.set(.12, 0, wp.userData.side ? .1 : -.1); _qd.setFromEuler(_eu);           // upright, a little forward and out, in the body frame
+      u.body.getWorldQuaternion(_q3); _qd.premultiply(_q3);                         // -> world
+      wp.userData.off = _qh.clone().invert().multiply(_qd);                         // hand^-1 * desired
     }
-    const sw = g.userData.wSwing; // attack swing: tip goes back over the shoulder, then forward and down
-    wp.rotation.order = 'YXZ';
-    wp.rotation.set(.12 + (sw ? sw[wp.userData.side] || 0 : 0) + d.x, g.userData.body.rotation.y, (wp.userData.side ? .1 : -.1) + d.z);
+    if (wp.userData.off) { wp.quaternion.copy(_qg).multiply(_qh).multiply(wp.userData.off); }
+    else { wp.rotation.order = 'YXZ'; wp.rotation.set(.12, u.body.rotation.y, wp.userData.side ? .1 : -.1); }
   }
 }
 function animate3D(g, moving, dt, fast) {
@@ -1807,14 +1801,14 @@ function applyPose(g) {
   } else if (RIDES[u.mount] && RIDES[u.mount].open) { // driver's seat: legs out under the dash, hands on the wheel
     pair('Leg', L(.12, -.1, 1), L(.04, -.35, 1));
     pair('Arm', L(.22, -.62, .75), L(-.12, -.05, 1));
-  } else if (u.weapons && !s) { // standing: the fist closes round the shaft in front of the hip
+  } else if (u.weapons) { // standing: the fist closes round the shaft in front of the hip (attacks swing from here)
     limb('RightArm', 'RightForeArm', 'RightHand', L(-.12, -.97, .2).clone(), L(-.05, -.25, 1).clone());
     if (u.weapons.length > 1) limb('LeftArm', 'LeftForeArm', 'LeftHand', L(.12, -.97, .2).clone(), L(.05, -.25, 1).clone());
   }
   if (!s) return;
   rotBone(B.Spine02, _upV, s.tw);
   rotBone(B.RightArm, _ax, s.arm); rotBone(B.LeftArm, _ax, s.armL);
-  u.wSwing = [s.sw, s.swL];
+  rotBone(B.RightForeArm, _ax, s.sw * -.35); if (s.armL) rotBone(B.LeftForeArm, _ax, s.swL * -.35); // the wrist follows through
 }
 // after the per-frame body reset: lift, spin and lunge of the attack, then the ride
 function postPose(g, now, speed, accel) {
@@ -2028,9 +2022,12 @@ function loadRide(k) {
     obj.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(obj); const c = box.getCenter(new THREE.Vector3());
     obj.position.set(-c.x, -box.min.y, -c.z);
     obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true;
-      if (R.horse) matte(o.material, .04); else for (const m of [].concat(o.material)) { if (m.emissive) { m.emissive.setRGB(0, 0, 0); m.emissiveMap = null; } m.envMapIntensity = 1.1; m.needsUpdate = true; } } });
+      if (R.horse) matte(o.material, .02); else for (const m of [].concat(o.material)) { if (m.emissive) { m.emissive.setRGB(0, 0, 0); m.emissiveMap = null; }
+        // generated PBR maps read most of the body as metal, which turns the paint into a mirror: keep metal for chrome only, add a little gloss
+        m.metalness = R.bike ? .55 : .3; m.roughness = Math.max(m.roughness, .9); m.envMapIntensity = .55; m.needsUpdate = true; } } });
     const wrap = new THREE.Group(); wrap.add(obj); wrap.userData.h = box.max.y - box.min.y;
     if (R.wheelR) { try { splitWheels(obj, wrap, R); } catch (e) { console.warn('wheels', e); } }
+    if (R.horse) { try { splitLegs(obj, wrap, wrap.userData.h); } catch (e) { console.warn('legs', e); } }
     res(wrap);
   }, undefined, () => res(null)));
   return rideCache[k];
@@ -2041,7 +2038,7 @@ function setMount(g, kind, force) {
   u.mount = kind; u.body.visible = true; u.label.position.y = 2.15;
   if (!kind || u.vehicle) return;
   loadRide(kind).then(p => { if (!p || u.mount !== kind || u.vehicle) return; const v = p.clone(true);
-    v.userData.wheels = []; v.traverse(o => { if (o.userData.spinR) v.userData.wheels.push(o); });
+    v.userData.wheels = []; v.userData.legs = []; v.traverse(o => { if (o.userData.spinR) v.userData.wheels.push(o); if (o.userData.leg !== undefined) v.userData.legs.push(o); });
     u.vehicle = v; g.add(v); });
 }
 function rideVisual(g, now, speed, accel) {
@@ -2062,9 +2059,11 @@ function rideVisual(g, now, speed, accel) {
   const spring = (tp, tr, K, D) => { S.pv += (-K * (S.p - tp) - D * S.pv) * dt; S.p += S.pv * dt; S.rv += (-K * (S.r - tr) - D * S.rv) * dt; S.r += S.rv * dt; };
   if (R.horse) { // the horse bobs and rocks with its gait and leans a little into turns; the rider sits in the saddle
     spring(0, -Math.atan(lat / 9.81) * .5, 30, 9);
-    const f = Math.min(1, sp / 5), ph = now / 1000 * (1.6 + sp * .28) * Math.PI * 2, bob = Math.abs(Math.sin(ph)) * .14 * f;
-    if (v) { v.position.y = bob; v.rotation.x = Math.sin(ph) * .045 * f; v.rotation.z = S.r; }
-    u.body.visible = true; u.body.position.y += h * .66 + .1 - hipHeight(u) + bob; u.body.rotation.z = S.r; u.label.position.y = 2.15 + h * .66 - .9;
+    // stride frequency rises with speed (walk ~1 Hz, gallop ~2.3 Hz); phase is integrated so speed changes never jump
+    const f = Math.min(1, sp / 6); u.gait = ((u.gait || 0) + (sp > .15 ? .9 + sp * .11 : 0) * dt) % 1;
+    const ph = u.gait * Math.PI * 2, bob = Math.sin(ph * 2) * .035 * f;
+    if (v) { v.position.y = bob + .035 * f; v.rotation.x = Math.sin(ph) * .035 * f; v.rotation.z = S.r; gallop(v, ph, f, sp); }
+    u.body.visible = true; u.body.position.y += h * .66 + .1 - hipHeight(u) + bob * .6 + .035 * f; u.body.rotation.z = S.r; u.label.position.y = 2.15 + h * .66 - .9;
     if (v) reins(g, v, R, h); // leather from each fist to the bit
   } else if (R.bike) { // a two-wheeler leans into the turn by atan(a_lat / g) and lifts its front under hard power
     const lean = THREE.MathUtils.clamp(-Math.atan(lat / 9.81), -.75, .75);
@@ -2146,6 +2145,56 @@ function rollWheels(v, speed, dt, dyaw) {
   const ws = v.userData.wheels; if (!ws || !ws.length) return;
   const steer = Math.abs(speed) > .5 ? THREE.MathUtils.clamp(2.6 * (dyaw / dt) / speed, -.55, .55) : 0;
   for (const w of ws) { w.rotation.x += speed * dt / w.userData.spinR; const pv = w.parent; if (pv.userData.steer) pv.rotation.y += (steer - pv.rotation.y) * Math.min(1, dt * 10); }
+}
+// horse legs: everything below the belly, split into four by side and front/back, each hinged at the shoulder or hip
+function splitLegs(obj, wrap, h) {
+  wrap.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(wrap.matrixWorld).invert(), v = new THREE.Vector3(), cut = h * .44;
+  const GET = [THREE.BufferAttribute.prototype.getX, THREE.BufferAttribute.prototype.getY, THREE.BufferAttribute.prototype.getZ, THREE.BufferAttribute.prototype.getW];
+  const meshes = []; obj.traverse(o => { if (o.isMesh && o.geometry.index) meshes.push(o); });
+  const loc = meshes.map(m => { const M = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld), pa = m.geometry.attributes.position, P = new Float32Array(pa.count * 3);
+    for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(M); P.set([v.x, v.y, v.z], i * 3); } return { m, M, P }; });
+  let zs = 0, zn = 0; for (const { P } of loc) for (let i = 0; i < P.length; i += 3) if (P[i + 1] < cut * .6) { zs += P[i + 2]; zn++; }
+  if (!zn) return; const zc = zs / zn;
+  let zmin = Infinity, zmax = -Infinity; for (const { P } of loc) for (let i = 2; i < P.length; i += 3) { zmin = Math.min(zmin, P[i]); zmax = Math.max(zmax, P[i]); }
+  const tailZ = zmin + (zmax - zmin) * .14; // the tail hangs behind the hind legs: keep it on the body
+  const legOf = (x, y, z) => (y >= cut || z < tailZ || Math.abs(x) < .06 || Math.abs(x) > .27) ? -1 : (z > zc ? 2 : 0) + (x > 0 ? 1 : 0); // 0 LH 1 RH... (rear 0/1, front 2/3)
+  const acc = [0, 1, 2, 3].map(() => ({ x: 0, z: 0, n: 0 }));
+  for (const { P } of loc) for (let i = 0; i < P.length; i += 3) { const id = legOf(P[i], P[i + 1], P[i + 2]); if (id >= 0) { acc[id].x += P[i]; acc[id].z += P[i + 2]; acc[id].n++; } }
+  const piv = acc.map(a => a.n ? new THREE.Vector3(a.x / a.n, cut + h * .05, a.z / a.n) : null);
+  const nodes = {};
+  for (const { m, M, P } of loc) {
+    const g0 = m.geometry, idx = g0.index.array, n = g0.attributes.position.count, lid = new Int8Array(n);
+    for (let i = 0; i < n; i++) lid[i] = legOf(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+    const body = [], lt = {};
+    for (let t = 0; t < idx.length; t += 3) { const a = lid[idx[t]], b = lid[idx[t + 1]], c = lid[idx[t + 2]];
+      if (a >= 0 && a === b && b === c) (lt[a] = lt[a] || []).push(idx[t], idx[t + 1], idx[t + 2]); else body.push(idx[t], idx[t + 1], idx[t + 2]); }
+    if (!Object.keys(lt).length) continue;
+    const nm = new THREE.Matrix3().getNormalMatrix(M);
+    for (const id of Object.keys(lt)) {
+      const pv = piv[id]; if (!pv) continue;
+      const tris = lt[id], remap = new Map(), keep = [];
+      const ix = tris.map(o => { if (!remap.has(o)) { remap.set(o, keep.length); keep.push(o); } return remap.get(o); });
+      const geo = new THREE.BufferGeometry();
+      for (const name of Object.keys(g0.attributes)) { if (name === 'tangent') continue;
+        const src = g0.attributes[name], k = src.itemSize, out = new Float32Array(keep.length * k);
+        keep.forEach((o, jj) => { for (let q = 0; q < k; q++) out[jj * k + q] = GET[q].call(src, o); });
+        geo.setAttribute(name, new THREE.BufferAttribute(out, k, src.normalized)); }
+      const pos = geo.attributes.position; for (let jj = 0; jj < pos.count; jj++) { v.fromBufferAttribute(pos, jj).applyMatrix4(M); pos.setXYZ(jj, v.x - pv.x, v.y - pv.y, v.z - pv.z); }
+      if (geo.attributes.normal) { const nn = geo.attributes.normal; for (let jj = 0; jj < nn.count; jj++) { v.fromBufferAttribute(nn, jj).applyMatrix3(nm).normalize(); nn.setXYZ(jj, v.x, v.y, v.z); } }
+      geo.setIndex(ix);
+      let node = nodes[id]; if (!node) { node = nodes[id] = new THREE.Group(); node.position.copy(pv); node.userData.leg = +id; wrap.add(node); }
+      const lm = new THREE.Mesh(geo, m.material); lm.castShadow = true; node.add(lm);
+    }
+    g0.setIndex(body);
+  }
+}
+// transverse gallop footfall order: left hind, right hind, left fore, right fore; a trot pairs diagonals at lower speed
+function gallop(v, ph, f, sp) {
+  const legs = v.userData.legs; if (!legs || !legs.length) return;
+  const gal = sp > 7, offs = gal ? [0, .12, .5, .62] : [0, .5, .5, 0], amp = (gal ? .62 : .42) * f;
+  for (const n of legs) { const id = n.userData.leg, front = id >= 2, a = Math.sin(ph + offs[id] * Math.PI * 2);
+    n.rotation.x = (front ? -1 : 1) * a * amp + (front ? -.08 : .06) * f * Math.max(0, a); }
 }
 const REIN_GEO = new THREE.CylinderGeometry(.011, .011, 1, 5, 1, true).translate(0, .5, 0).rotateX(Math.PI / 2);
 const reinMat = new THREE.MeshStandardMaterial({ color: '#3a2414', roughness: .8 });
