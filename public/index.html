@@ -1075,7 +1075,7 @@ function syncPeers(list) {
       const g = makeAvatar(color, name, false, k); g.position.set(clampX(pr.x), 0, clampZ(pr.z)); scene.add(g);
       v = { g, name, color, k, lastT: pr.t, bowStart: -1e9, danceStart: -1e9, r: Number(pr.r) || 0 }; peerViews.set(p.peer, v);
     }
-    v.tx = clampX(pr.x); v.tz = clampZ(pr.z); v.tr = Number.isFinite(pr.r) ? pr.r : 0;
+    v.tx = clampX(pr.x); v.tz = clampZ(pr.z); v.tr = Number.isFinite(pr.r) ? pr.r : 0; v.s = typeof pr.s === 'string' ? pr.s : null;
     if (pr.a === 'bow' && pr.t !== v.lastT) { v.lastT = pr.t; v.bowStart = performance.now(); }
     if (pr.a === 'dance' && pr.t !== v.lastT) { v.lastT = pr.t; v.danceStart = performance.now(); }
   }
@@ -1096,6 +1096,7 @@ function updatePeers(dt, now) {
   const a = 1 - Math.exp(-dt * 8);
   for (const v of peerViews.values()) {
     const g = v.g, dx = v.tx - g.position.x, dz = v.tz - g.position.z, moving = Math.hypot(dx, dz) > .05;
+    g.visible = !tourOn || (!!tourSpot && v.s === tourSpot.id); // inside a photo, show only people standing in the same photo
     g.position.x += dx * a; g.position.z += dz * a;
     let dr = v.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * a;
     g.userData.body.position.y = moving && !g.userData.model3d ? Math.abs(Math.sin(now / 140)) * .08 : 0;
