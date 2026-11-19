@@ -14,7 +14,7 @@ const CANDLE_TTL_MS = 10 * 60 * 1000;
 const CANDLES_PER_CHANNEL = 200;
 const DEFAULT_VIDEO = 'Za3A_9Plm5A'; // big screen in the nave plays this until someone changes it
 const INDEX = path.join(__dirname, 'public', 'index.html');
-const STATIC_RE = /^\/(textures|photos|panos|avatars|models)\/[a-z0-9_-]+\.(jpg|png|webp|glb)$/;
+const STATIC_RE = /^\/(textures|photos|panos|avatars|models|status)\/[a-z0-9_-]+\.(jpg|png|webp|glb)$/;
 const SPOTS = new Set(['nativity', 'passion', 'glory', 'nave', 'crossing', 'altar']); // 360° tour spots
 const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.glb': 'model/gltf-binary' };
 
@@ -60,7 +60,7 @@ function cleanPresence(p) {
       case 'n': if (typeof v === 'string') { const n = cleanName(v); if (n) out.n = n; } break;
       case 'c': if (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)) out.c = v; break;
       case 'w': out.w = v === 1 ? 1 : 0; break;
-      case 'k': if (Number.isInteger(v) && v >= 0 && v <= 7) out.k = v; break; // character sheet 1..7, 0 = cloak
+      case 'k': if (Number.isInteger(v) && v >= 0 && v <= 11) out.k = v; break; // character sheet 1..7, 0 = cloak
       case 'x': case 'z': { const n = num(v, -200, 200); if (n !== undefined) out[k] = Math.round(n * 100) / 100; break; }
       case 'r': { const n = num(v, -10, 10); if (n !== undefined) out.r = Math.round(n * 100) / 100; break; }
       case 'a': if (v === 'bow' || v === 'dance') out.a = v; break;

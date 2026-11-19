@@ -117,6 +117,13 @@ body.touring #chatLog{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 @media (max-width:520px){ #chatLog{top:calc(120px + env(safe-area-inset-top,0px));bottom:auto;left:max(16px, env(safe-area-inset-left,0px));right:auto}
   #chatOpen{top:calc(64px + env(safe-area-inset-top,0px));bottom:auto} #chatForm{top:calc(110px + env(safe-area-inset-top,0px));bottom:auto} }
+
+#statusBtn{width:100%;margin-top:6px}
+#statusModal{position:fixed;inset:0;z-index:8;background:rgba(10,8,6,.78);display:grid;place-items:center;padding:16px;
+  padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px))}
+#statusModal img{max-width:min(1100px,100%);max-height:calc(100vh - 100px);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.6);display:block}
+#statusModal figcaption{color:var(--muted);font-size:12px;text-align:center;margin-top:8px}
+#statusModal figure{margin:0}
 .gal-nav{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 @media (max-width:520px){ .title{max-width:calc(100% - 150px)} .gallery img{max-height:32vh} }
 </style>
@@ -166,6 +173,7 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
     </div>
     <p class="me-line">내 이름 <b id="myName"></b></p>
     <div class="pick" id="charPick" role="group" aria-label="캐릭터 고르기"></div>
+    <button id="statusBtn" type="button" hidden>상태창 보기</button>
   </div>
   <div>
     <p class="group-label">대형 화면</p>
@@ -191,6 +199,7 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 <div id="chatLog" hidden aria-live="polite"></div>
 <button id="chatOpen" type="button">말하기 (Enter)</button>
 <form id="chatForm" hidden><input id="chatInput" maxlength="80" autocomplete="off" placeholder="하고 싶은 말 (80자) · Enter로 보내기, Esc로 닫기" aria-label="채팅 입력"><button type="submit">보내기</button></form>
+<div id="statusModal" hidden role="dialog" aria-label="상태창"><figure><img id="statusImg" alt=""><figcaption>Higgsfield로 만든 오리지널 디자인 · 눌러서 닫기</figcaption></figure></div>
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
@@ -897,7 +906,10 @@ function nameSprite(text, isMe) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
   s.scale.set(2.2, .41, 1); s.position.y = 2.15; return s;
 }
-const CHARS = ['하준', '도윤', '서진', '이안', '태오', '민혁', '유찬'];
+const CHARS = ['하준', '도윤', '서진', '이안', '태오', '민혁', '유찬', '유비', '관우', '장비', '조자룡'];
+const SPRITE_CHARS = 7; // 1..7 have photo sprites as a stand-in while the 3D model loads
+// weapons held by the Three Kingdoms heroes: file, length in metres, grip point from the butt end (0..1), both hands
+const WEAPONS = { 8: { f: 'w8', len: .95, grip: .1, both: true }, 9: { f: 'w9', len: 2.3, grip: .38 }, 10: { f: 'w10', len: 2.6, grip: .38 }, 11: { f: 'w11', len: 2.5, grip: .38 } };
 const charTex = {};
 function charTextures(k) {
   if (!charTex[k]) {
@@ -908,12 +920,14 @@ function charTextures(k) {
 }
 function makeAvatar(color, name, isMe, k = 0) {
   const g = new THREE.Group(), body = new THREE.Group(); body.rotation.order = 'YXZ'; g.add(body);
-  if (k >= 1 && k <= CHARS.length) {
+  if (k >= 1 && k <= SPRITE_CHARS) {
     // billboard of the character sheet: turns to face the camera, shows the back when seen from behind
     const tx = charTextures(k), bill = new THREE.Group(); body.add(bill);
     const mat = new THREE.MeshLambertMaterial({ map: tx.front, transparent: true, alphaTest: .35, side: THREE.DoubleSide });
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(.77, 1.75).translate(0, .875, 0), mat); bill.add(plane);
     g.userData.bill = bill; g.userData.tx = tx; g.userData.mat = mat;
+  } else if (k > SPRITE_CHARS) {
+    // hero without a sprite: nothing but the name until the 3D model arrives
   } else {
     const robeM = new THREE.MeshStandardMaterial({ color, roughness: .8 });
     const robe = new THREE.Mesh(new THREE.ConeGeometry(.42, 1.25, 14), robeM); robe.position.y = .62; robe.castShadow = true; body.add(robe);
@@ -946,14 +960,53 @@ function upgradeTo3D(g, k) {
     const action = clip ? mixer.clipAction(clip) : null;
     if (action) { action.play(); action.paused = true; }
     Object.assign(g.userData, { model3d: model, mixer, walkAction: action });
+    if (WEAPONS[k]) attachWeapons(g, model, WEAPONS[k]);
   });
+}
+const weaponCache = {};
+function loadWeapon(w) {
+  if (!weaponCache[w.f]) weaponCache[w.f] = new Promise(res => gltfLoader.load(`/models/${w.f}.glb?v=${ASSET_V}`, gl => {
+    const obj = gl.scene; obj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(obj), size = box.getSize(new THREE.Vector3());
+    const long = Math.max(size.x, size.y, size.z), s = w.len / long;
+    // stand the weapon upright with the grip at the origin
+    const wrap = new THREE.Group(); obj.scale.setScalar(s);
+    const axisY = size.y >= size.x && size.y >= size.z;
+    if (!axisY) obj.rotation.z = size.x >= size.z ? Math.PI / 2 : 0, obj.rotation.x = size.z > size.x ? Math.PI / 2 : 0;
+    obj.updateMatrixWorld(true);
+    const b2 = new THREE.Box3().setFromObject(obj), c = b2.getCenter(new THREE.Vector3());
+    obj.position.set(-c.x, -(b2.min.y + (b2.max.y - b2.min.y) * w.grip), -c.z);
+    obj.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
+    wrap.add(obj); res(wrap);
+  }, undefined, () => res(null)));
+  return weaponCache[w.f];
+}
+function attachWeapons(g, model, w) {
+  loadWeapon(w).then(proto => {
+    if (!proto) return;
+    const hands = [];
+    model.traverse(o => { if (o.isBone && /^RightHand$/i.test(o.name)) hands.unshift(o); if (w.both && o.isBone && /^LeftHand$/i.test(o.name)) hands.push(o); });
+    g.userData.weapons = hands.map((bone, i) => { const wp = proto.clone(true); wp.userData.bone = bone; wp.userData.side = i; g.add(wp); return wp; });
+  });
+}
+const _hp = new THREE.Vector3();
+function holdWeapons(g) {
+  const ws = g.userData.weapons; if (!ws) return;
+  g.updateMatrixWorld(true);
+  for (const wp of ws) {
+    wp.userData.bone.getWorldPosition(_hp); g.worldToLocal(_hp);
+    wp.position.copy(_hp);
+    wp.rotation.set(.18, 0, wp.userData.side ? .12 : -.12); // upright, leaning slightly forward and outward
+  }
 }
 function animate3D(g, moving, dt, fast) {
   const u = g.userData; if (!u.mixer || !u.walkAction) return;
+  u._hold = true;
   const a = u.walkAction;
   if (moving) { a.paused = false; a.timeScale = fast ? 2.6 : 1.6; }
   else { a.paused = true; a.time = 0; }
   u.mixer.update(dt);
+  holdWeapons(g);
 }
 // face the camera every frame; pick front or back by which side of the pilgrim the camera is on
 const _bv = new THREE.Vector3();
@@ -984,11 +1037,17 @@ function renderPicker() {
   }));
 }
 function chooseChar(k) {
+  statusBtn.hidden = !(k >= 8);
   me.k = k; try { localStorage.setItem('sf-pilgrim', JSON.stringify(me)); } catch (e) { /* storage blocked */ }
   const vis = myAvatar.visible; scene.remove(myAvatar); myAvatar = makeAvatar(me.c, me.n, true, me.k); myAvatar.visible = vis; scene.add(myAvatar);
   renderPicker(); sendPresence(true);
 }
 renderPicker();
+const statusBtn = document.getElementById('statusBtn'), statusModal = document.getElementById('statusModal'), statusImg = document.getElementById('statusImg');
+statusBtn.hidden = !(me.k >= 8);
+statusBtn.addEventListener('click', () => { statusImg.src = `/status/${me.k}.webp?v=${ASSET_V}`; statusImg.alt = `${CHARS[me.k - 1]} 상태창`; statusModal.hidden = false; });
+statusModal.addEventListener('click', () => { statusModal.hidden = true; });
+addEventListener('keydown', e => { if (e.key === 'Escape') statusModal.hidden = true; });
 const destMark = new THREE.Mesh(new THREE.RingGeometry(.3, .45, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#f4ecdc', transparent: true, opacity: .7 }));
 destMark.visible = false; destMark.userData.keepInTour = true; scene.add(destMark);
 const keys = {};
