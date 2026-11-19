@@ -69,6 +69,24 @@ button:disabled{opacity:.4;cursor:default}
   .views{grid-template-columns:repeat(2,1fr)}
 }
 @media (max-height:560px) and (min-width:521px){ .hint{display:none} }
+.panel{transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .35s}
+body.nav-hidden .panel{transform:translateX(calc(-100% - 40px));opacity:0;pointer-events:none}
+#navTab{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:5;writing-mode:vertical-rl;letter-spacing:.2em;
+  background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-radius:0 12px 12px 0;border-left:0;padding:16px 9px;font-size:13px}
+body:not(.nav-hidden) #navTab{display:none}
+#joy{position:fixed;left:max(24px, env(safe-area-inset-left,0px));bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:5;width:136px;height:136px;border-radius:50%;
+  background:radial-gradient(circle,rgba(24,19,14,.35),rgba(24,19,14,.6));border:1px solid var(--line);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}
+#joy i{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:rgba(233,168,76,.85);
+  box-shadow:0 4px 14px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,255,255,.35);pointer-events:none}
+#joy span{position:absolute;inset:0;display:grid;place-items:center;font-size:11px;color:var(--muted);pointer-events:none;padding-top:96px}
+#pad{position:fixed;right:max(16px, env(safe-area-inset-right,0px));bottom:calc(70px + env(safe-area-inset-bottom,0px));z-index:5;
+  display:grid;grid-template-columns:repeat(2,64px);gap:8px;touch-action:none;user-select:none;-webkit-user-select:none}
+#pad button{height:64px;border-radius:50%;background:var(--panel);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);font-size:12px;padding:0}
+#pad button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+#joy[hidden],#pad[hidden],#navTab[hidden]{display:none}
+body.nav-hidden #rideHud{bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+@media (max-width:520px){ #joy{bottom:calc(20px + env(safe-area-inset-bottom,0px))} #rideHud{bottom:auto;top:calc(110px + env(safe-area-inset-top,0px))} }
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 
 .gallery{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));right:max(16px, env(safe-area-inset-right,0px));z-index:4;
@@ -156,7 +174,7 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 
 <div id="tip" hidden></div>
 
-<nav class="panel" aria-label="보기 설정">
+<nav class="panel" id="panel" aria-label="보기 설정">
   <div>
     <p class="group-label">시점</p>
     <div class="views" role="group" aria-label="시점">
@@ -222,9 +240,13 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 <form id="chatForm" hidden><input id="chatInput" maxlength="80" autocomplete="off" placeholder="하고 싶은 말 (80자) · Enter로 보내기, Esc로 닫기" aria-label="채팅 입력"><button type="submit">보내기</button></form>
 <div id="statusModal" hidden role="dialog" aria-label="상태창"><figure><img id="statusImg" alt=""><figcaption>Higgsfield로 만든 오리지널 디자인 · 눌러서 닫기</figcaption></figure></div>
 <div id="toast" hidden></div>
+<button id="navTab" type="button" aria-controls="panel" aria-expanded="false">☰ 메뉴</button>
+<div id="joy" hidden role="application" aria-label="이동 조이스틱 · 위 가속/앞으로, 아래 브레이크/뒤로, 좌우 방향"><span>조이스틱</span><i></i></div>
+<div id="pad" hidden><button type="button" id="padAtk">공격</button><button type="button" id="padSp">필살기</button>
+  <button type="button" id="padBoost">부스트</button><button type="button" id="padRide">탈것</button></div>
 <div id="rideHud" hidden><div class="spd"><span id="hudSpd">0</span><small>km/h</small></div><div class="bar"><i id="hudBar"></i></div><button id="hudSound" type="button">소리 끄기</button>
   <div class="meta"><span id="hudName"></span> · <span id="hudGear"></span> · <span id="hudLaunch">0→100 측정 준비</span></div>
-  <div class="keys">W 가속 · S 브레이크/후진 · A/D 핸들 · Shift 부스트 · E 내리기 · F 공격 · R 필살기</div></div>
+  <div class="keys">조이스틱 위 가속 · 아래 브레이크/후진 · 좌우 핸들 · 바닥을 누르면 자동 운전 · 키보드 WASD · Shift 부스트 · E 내리기</div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
@@ -948,6 +970,7 @@ const RIDES = {
   3: { f: 'amg', name: 'AMG CLA 45 S 4MATIC+', len: 4.69, vmax: 43, boost: 56, acc: 8.0, brake: 15, rev: 4, vrev: 7, turn: 1.65, rider: false, yaw: 0, gears: 8 },
 };
 let rideKind = 0, lastRide = 2, rideV = 0, rideSteer = 0, rideAcc = 0, launchT0 = null, launchShown = false;
+const joy = { on: false, x: 0, y: 0 }; let boostHeld = false, navTimer = 0;
 let atkReady = 0, spReady = 0, soundOn = true, actx = null, eng = null, shakeT = -1e9, shakeA = 0, spLabel = '';
 const WEAPONS = { 8: { f: 'w8', len: .95, grip: .1, both: true }, 9: { f: 'w9', len: 2.3, grip: .38 }, 10: { f: 'w10', len: 2.6, grip: .38 }, 11: { f: 'w11', len: 2.5, grip: .38 } };
 const charTex = {};
@@ -1121,7 +1144,7 @@ function sendPresence(force) {
 function startWalk() {
   walking = true; myAvatar.visible = true; currentView = null;
   document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', 'false'));
-  walkBtn.setAttribute('aria-pressed', 'true'); walkBtn.textContent = '순례 그만'; bowBtn.disabled = candleBtn.disabled = danceBtn.disabled = false; setFightEnabled(true);
+  walkBtn.setAttribute('aria-pressed', 'true'); walkBtn.textContent = '순례 그만'; bowBtn.disabled = candleBtn.disabled = danceBtn.disabled = false; setFightEnabled(true); showControls(true); hideNavSoon(1200);
   controls.minDistance = 2.5; controls.maxDistance = 70; controls.maxPolarAngle = Math.PI * .49;
   const t1 = myPos.clone().add(new THREE.Vector3(0, 1.5, 0));
   const back = new THREE.Vector3(-Math.sin(myRot), 0, -Math.cos(myRot)).multiplyScalar(11);
@@ -1131,7 +1154,7 @@ function startWalk() {
   sendPresence(true);
 }
 function stopWalk() {
-  setRide(0); setFightEnabled(false);
+  setRide(0); setFightEnabled(false); showControls(false); setNav(true);
   walking = false; myAvatar.visible = false; dest = null; destMark.visible = false;
   walkBtn.setAttribute('aria-pressed', 'false'); walkBtn.textContent = '순례 시작'; bowBtn.disabled = candleBtn.disabled = danceBtn.disabled = true;
   hintEl.textContent = hint0; sendPresence(true);
@@ -1304,7 +1327,8 @@ const vF = new THREE.Vector3(), vR = new THREE.Vector3(), vMove = new THREE.Vect
 function updateWalk(dt, now) {
   if (!walking) return;
   if (rideKind) { updateRide(dt, now); return; }
-  const fwd = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0), side = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0);
+  let fwd = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0), side = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0);
+  if (joy.on) { fwd = joy.y; side = joy.x; }
   vMove.set(0, 0, 0);
   if (fwd || side) {
     dest = null; destMark.visible = false;
@@ -1313,7 +1337,7 @@ function updateWalk(dt, now) {
   } else if (dest) { vMove.subVectors(dest, myPos).setY(0); if (vMove.length() < .3) { dest = null; destMark.visible = false; vMove.set(0, 0, 0); } }
   const moving = vMove.lengthSq() > 0;
   if (moving && !tween) {
-    const step = Math.min(vMove.length(), (keys.shift ? 9 : 3.4) * dt); vMove.normalize().multiplyScalar(step);
+    const jm = joy.on ? Math.min(1, Math.hypot(joy.x, joy.y)) : 1, step = Math.min(vMove.length(), (keys.shift || boostHeld ? 9 : 3.4) * jm * dt); vMove.normalize().multiplyScalar(step);
     const [nx, nz] = clampToSpot(myPos.x + vMove.x, myPos.z + vMove.z);
     vDelta.set(nx - myPos.x, 0, nz - myPos.z); myPos.x = nx; myPos.z = nz;
     camera.position.add(vDelta); controls.target.add(vDelta);
@@ -1882,6 +1906,41 @@ addEventListener('keydown', e => {
   if (k === 'f') doAttack('atk'); else if (k === 'r') doAttack('sp'); else if (k === 'e') setRide(rideKind ? 0 : lastRide);
 });
 
+// ---------- on-screen joystick and buttons (touch and mouse) ----------
+const joyEl = document.getElementById('joy'), joyKnob = joyEl.querySelector('i'), padEl = document.getElementById('pad');
+let joyId = null;
+function joyMove(e) {
+  const r = joyEl.getBoundingClientRect(), R0 = r.width / 2 - 14;
+  let x = e.clientX - (r.left + r.width / 2), y = e.clientY - (r.top + r.height / 2); const d = Math.hypot(x, y);
+  if (d > R0) { x *= R0 / d; y *= R0 / d; }
+  joyKnob.style.transform = `translate(${x}px, ${y}px)`; joy.x = x / R0; joy.y = -y / R0; joy.on = true;
+}
+function joyEnd() { joyId = null; joy.on = false; joy.x = joy.y = 0; joyKnob.style.transform = ''; }
+joyEl.addEventListener('pointerdown', e => { e.preventDefault(); joyId = e.pointerId; try { joyEl.setPointerCapture(e.pointerId); } catch (_) { /* synthetic pointer */ } joyMove(e); ac(); });
+joyEl.addEventListener('pointermove', e => { if (e.pointerId === joyId) joyMove(e); });
+joyEl.addEventListener('pointerup', e => { if (e.pointerId === joyId) joyEnd(); });
+joyEl.addEventListener('pointercancel', joyEnd);
+addEventListener('blur', joyEnd);
+const padBoost = document.getElementById('padBoost');
+const boostOn = v => { boostHeld = v; padBoost.classList.toggle('on', v); };
+padBoost.addEventListener('pointerdown', e => { e.preventDefault(); try { padBoost.setPointerCapture(e.pointerId); } catch (_) { /* synthetic pointer */ } boostOn(true); });
+padBoost.addEventListener('pointerup', () => boostOn(false)); padBoost.addEventListener('pointercancel', () => boostOn(false));
+document.getElementById('padAtk').addEventListener('click', () => doAttack('atk'));
+document.getElementById('padSp').addEventListener('click', () => doAttack('sp'));
+document.getElementById('padRide').addEventListener('click', () => setRide(rideKind ? 0 : lastRide));
+function showControls(on) { joyEl.hidden = padEl.hidden = !on; if (!on) { joyEnd(); boostOn(false); } }
+// the settings panel tucks away to the left while you move; the tab on the left edge brings it back
+const navTab = document.getElementById('navTab'), panelEl = document.getElementById('panel');
+function setNav(open) {
+  clearTimeout(navTimer); document.body.classList.toggle('nav-hidden', !open); navTab.setAttribute('aria-expanded', String(open));
+}
+function hideNavSoon(ms) { clearTimeout(navTimer); if (walking) navTimer = setTimeout(() => { if (walking && !panelEl.matches(':hover') && !panelEl.contains(document.activeElement)) setNav(false); }, ms); }
+navTab.addEventListener('click', () => { setNav(true); });
+panelEl.addEventListener('pointerenter', () => clearTimeout(navTimer));
+panelEl.addEventListener('pointerleave', () => hideNavSoon(2200));
+canvas.addEventListener('pointerdown', () => { if (walking) setNav(false); });
+joyEl.addEventListener('pointerdown', () => { if (walking) setNav(false); });
+
 // ---------- rides ----------
 const rideCache = {};
 function loadRide(k) {
@@ -1931,6 +1990,7 @@ function setRide(k) {
   document.querySelectorAll('[data-ride]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.ride) === k)));
   document.getElementById('rideHud').hidden = !k;
   if (k) {
+    setNav(false);
     document.getElementById('hudName').textContent = RIDES[k].name; document.getElementById('hudLaunch').textContent = '0→100 측정 준비';
     controls.maxDistance = 90; toast(`${RIDES[k].name}에 탔어요 · W 가속 · S 브레이크 · A/D 핸들 · Shift 부스트 · E 내리기`);
   } else myAvatar.userData.body.visible = true;
@@ -1939,10 +1999,20 @@ function setRide(k) {
 }
 function updateRide(dt, now) {
   const R = RIDES[rideKind];
-  const thr = !!(keys.w || keys.arrowup), brk = !!(keys.s || keys.arrowdown), st = (keys.a || keys.arrowleft ? 1 : 0) - (keys.d || keys.arrowright ? 1 : 0);
-  const top = keys.shift ? R.boost : R.vmax, drag = (.5 + .01 * rideV * rideV) * Math.sign(rideV);
+  let thr = !!(keys.w || keys.arrowup), brk = !!(keys.s || keys.arrowdown), st = (keys.a || keys.arrowleft ? 1 : 0) - (keys.d || keys.arrowright ? 1 : 0), pedal = 1;
+  if (joy.on) { thr = joy.y > .18; brk = joy.y < -.18; st = Math.abs(joy.x) > .12 ? -joy.x : 0; pedal = thr ? Math.min(1, (joy.y - .18) / .6 + .25) : 1; }
+  if (thr || brk || st) { if (dest) { dest = null; destMark.visible = false; } }
+  else if (dest) { // tapped the ground: drive there by itself
+    const dx = dest.x - myPos.x, dz = dest.z - myPos.z, d = Math.hypot(dx, dz);
+    if (d < (R.rider ? 1.2 : 2.5)) { dest = null; destMark.visible = false; brk = Math.abs(rideV) > .3; }
+    else { let da = Math.atan2(dx, dz) - myRot; da = Math.atan2(Math.sin(da), Math.cos(da)); st = THREE.MathUtils.clamp(da * 2, -1, 1);
+      const want = Math.min(R.vmax, Math.sqrt(2 * R.brake * .6 * d) + 1) * (Math.abs(da) > 1.2 ? .35 : 1);
+      thr = rideV < want; brk = rideV > want + 2; pedal = Math.abs(da) > 1.2 ? .5 : 1; }
+  }
+  const boosting = keys.shift || boostHeld;
+  const top = boosting ? R.boost : R.vmax, drag = (.5 + .01 * rideV * rideV) * Math.sign(rideV);
   let acc;
-  if (thr) acc = rideV < -.2 ? R.brake : R.acc * (1 - (rideV / top) * Math.abs(rideV / top));
+  if (thr) acc = rideV < -.2 ? R.brake : R.acc * pedal * (1 - (rideV / top) * Math.abs(rideV / top));
   else if (brk) acc = rideV > .2 ? -R.brake : (rideV > -R.vrev ? -R.rev : 0);
   else acc = -drag * 1.6;
   rideV += acc * dt; if (!thr && !brk && Math.abs(rideV) < .2) rideV = 0;
