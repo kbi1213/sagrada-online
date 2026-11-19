@@ -139,7 +139,7 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 #statusBtn{width:100%;margin-top:6px}
 .fight{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
 .fight button{font-size:12px;padding:8px 4px}
-.rides{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
+.rides{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
 .rides button{font-size:12px;padding:8px 2px}
 #rideHud{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:5;min-width:min(340px,calc(100% - 32px));
   background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;padding:10px 14px;
@@ -210,7 +210,8 @@ body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
     <div class="fight"><button id="atkBtn" type="button" disabled>공격 (F)</button><button id="spBtn" type="button" disabled>필살기 (R)</button></div>
     <div class="rides" role="group" aria-label="탈것">
       <button type="button" data-ride="0" aria-pressed="true" disabled>걷기</button><button type="button" data-ride="1" aria-pressed="false" disabled>말</button>
-      <button type="button" data-ride="2" aria-pressed="false" disabled>포르쉐</button><button type="button" data-ride="3" aria-pressed="false" disabled>AMG</button>
+      <button type="button" data-ride="2" aria-pressed="false" disabled>포르쉐</button><button type="button" data-ride="3" aria-pressed="false" disabled>AMG GT SUV</button>
+      <button type="button" data-ride="4" aria-pressed="false" disabled>시간여행카</button><button type="button" data-ride="5" aria-pressed="false" disabled>오토바이</button>
     </div>
     <button id="statusBtn" type="button" hidden>상태창 보기</button>
   </div>
@@ -952,7 +953,7 @@ function nameSprite(text, isMe) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
   s.scale.set(2.2, .41, 1); s.position.y = 2.15; return s;
 }
-const CHARS = ['하준', '도윤', '서진', '이안', '태오', '민혁', '유찬', '유비', '관우', '장비', '조자룡'];
+const CHARS = ['하준', '도윤', '서진', '이안', '태오', '민혁', '유찬', '유비', '관우', '장비', '조자룡', '별빛 우주친구', '빨강머리 포워드', '주장 센터'];
 const SPRITE_CHARS = 7; // 1..7 have photo sprites as a stand-in while the 3D model loads
 // weapons held by the Three Kingdoms heroes: file, length in metres, grip point from the butt end (0..1), both hands
 
@@ -962,13 +963,19 @@ const HERO = {
   9: { color: '#46e08a', sp: '청룡언월참', dur: 1.9 },
   10: { color: '#ff7a2a', sp: '장판교 대갈일성', dur: 1.8 },
   11: { color: '#a8dcff', sp: '백룡칠연창', dur: 2.0 },
+  12: { color: '#8fe3ff', sp: '별빛 공중부양', dur: 2.2 },
+  13: { color: '#ff4a3a', sp: '레드 슬램덩크', dur: 1.9 },
+  14: { color: '#ffd36a', sp: '골밑 철벽 블록', dur: 1.9 },
 };
 // rides: length in metres, top speed (m/s) normally and with Shift, acceleration (m/s²), braking, steering rate
 const RIDES = {
-  1: { f: 'horse', name: '말', len: 2.45, vmax: 9, boost: 16, acc: 4.2, brake: 8, rev: 1.5, vrev: 1.5, turn: 2.4, rider: true, yaw: 0, gears: 0 },
-  2: { f: 'porsche', name: '포르쉐 911 카레라', len: 4.54, vmax: 46, boost: 60, acc: 8.4, brake: 16, rev: 4, vrev: 7, turn: 1.75, rider: false, yaw: 0, gears: 8 },
-  3: { f: 'amg', name: 'AMG CLA 45 S 4MATIC+', len: 4.69, vmax: 43, boost: 56, acc: 8.0, brake: 15, rev: 4, vrev: 7, turn: 1.65, rider: false, yaw: 0, gears: 8 },
+  1: { f: 'horse', name: '말', len: 2.45, vmax: 9, boost: 16, acc: 4.2, brake: 8, rev: 1.5, vrev: 1.5, turn: 2.4, rider: true, horse: true, yaw: 0, gears: 0 },
+  2: { f: 'porsche', wheelR: 0.35, name: '포르쉐 911 터보 S 카브리올레', open: true, len: 4.55, vmax: 50, boost: 64, acc: 12, brake: 16, rev: 4, vrev: 7, turn: 1.75, rider: false, yaw: Math.PI, gears: 8 },
+  3: { f: 'amg', wheelR: 0.39, name: '메르세데스-AMG GT SUV (전기)', len: 5.1, vmax: 50, boost: 62, acc: 11.6, brake: 16, rev: 4, vrev: 7, turn: 1.45, rider: false, yaw: Math.PI, gears: 1, ev: true },
+  4: { f: 'dmc', wheelR: 0.32, name: '시간여행 걸윙카', len: 4.27, vmax: 36, boost: 48, acc: 6.4, brake: 13, rev: 4, vrev: 7, turn: 1.6, rider: false, yaw: 0, gears: 5, timeJump: true },
+  5: { f: 'bike', wheelR: 0.33, name: 'V트윈 크루저', len: 2.45, vmax: 36, boost: 50, acc: 8.6, brake: 12, rev: 1, vrev: 1, turn: 2.1, rider: true, bike: true, yaw: 0, gears: 6 },
 };
+let timeArmed = true;
 let rideKind = 0, lastRide = 2, rideV = 0, rideSteer = 0, rideAcc = 0, launchT0 = null, launchShown = false;
 const joy = { on: false, x: 0, y: 0 }; let boostHeld = false, navTimer = 0;
 let atkReady = 0, spReady = 0, soundOn = true, actx = null, eng = null, shakeT = -1e9, shakeA = 0, spLabel = '';
@@ -1028,12 +1035,17 @@ function upgradeTo3D(g, k) {
     // Meshy rigs at the requested height (1.78 m) with feet at y = 0, so the model is used as delivered
     model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; matte(o.material, .08); } });
     const bones = {}; model.traverse(o => { if (o.isBone) bones[o.name] = o; }); g.userData.bones = bones;
+    // bones the walk clip never sets would keep every pose we add on top; remember their rest pose and restore it each frame
+    const driven = new Set((gltf.animations[0] ? gltf.animations[0].tracks : []).filter(t => t.name.endsWith('.quaternion')).map(t => t.name.slice(0, -11)));
+    g.userData.rest = Object.values(bones).filter(b => !driven.has(b.name)).map(b => [b, b.quaternion.clone()]);
     if (g.userData.mount) setMount(g, g.userData.mount, true);
     if (g.userData.bill) g.userData.bill.visible = false;
     g.userData.body.add(model);
     const mixer = new THREE.AnimationMixer(model), clip = gltf.animations[0];
     const action = clip ? mixer.clipAction(clip) : null;
-    if (action) { action.play(); action.paused = true; }
+    if (action) { action.play(); mixer.update(0); action.paused = true; }
+    // standing pose (clip frame 0): while the clip is paused the mixer does not rewrite the bones, so poses are rebuilt from this every frame
+    const base = []; model.traverse(o => { if (o.isBone) base.push([o, o.quaternion.clone()]); }); g.userData.base = base;
     Object.assign(g.userData, { model3d: model, mixer, walkAction: action });
     if (WEAPONS[k]) attachWeapons(g, model, WEAPONS[k]);
   });
@@ -1064,15 +1076,30 @@ function attachWeapons(g, model, w) {
     g.userData.weapons = hands.map((bone, i) => { const wp = proto.clone(true); wp.userData.bone = bone; wp.userData.side = i; g.add(wp); return wp; });
   });
 }
-const _hp = new THREE.Vector3();
+const _hp = new THREE.Vector3(), _hw = new THREE.Vector3(), _hv = new THREE.Vector3(), _ha = new THREE.Vector3();
 function holdWeapons(g) {
   const ws = g.userData.weapons; if (!ws) return;
   g.updateMatrixWorld(true);
+  const t = performance.now(), yaw = g.rotation.y, cy = Math.cos(yaw), sy = Math.sin(yaw);
   for (const wp of ws) {
-    wp.userData.bone.getWorldPosition(_hp); g.worldToLocal(_hp);
+    wp.userData.bone.getWorldPosition(_hw); _hp.copy(_hw); g.worldToLocal(_hp);
     wp.position.copy(_hp);
+    // inertia: a long pole lags behind the hand. Spring-damper on pitch/roll, driven by the hand's acceleration in the body frame.
+    const d = wp.userData.dyn || (wp.userData.dyn = { x: 0, z: 0, vx: 0, vz: 0, p: null, vel: new THREE.Vector3(), t });
+    if (t !== d.t) {
+      const dt = Math.min(.05, Math.max(.004, (t - d.t) / 1000)); d.t = t;
+      if (d.p && d.p.distanceTo(_hw) < 3) {
+        _hv.subVectors(_hw, d.p).divideScalar(dt); _ha.subVectors(_hv, d.vel).divideScalar(dt).clampLength(0, 40); d.vel.copy(_hv);
+        const ax = _ha.x * cy - _ha.z * sy, az = _ha.x * sy + _ha.z * cy; // world -> body frame
+        const tx = THREE.MathUtils.clamp(-az * .014, -.45, .45), tz = THREE.MathUtils.clamp(ax * .014, -.45, .45);
+        d.vx += (-38 * (d.x - tx) - 5.5 * d.vx) * dt; d.vz += (-38 * (d.z - tz) - 5.5 * d.vz) * dt;
+        d.x += d.vx * dt; d.z += d.vz * dt;
+      } else d.vel.set(0, 0, 0);
+      d.p = (d.p || new THREE.Vector3()).copy(_hw);
+    }
     const sw = g.userData.wSwing; // attack swing: tip goes back over the shoulder, then forward and down
-    wp.rotation.order = 'YXZ'; wp.rotation.set(.18 + (sw ? sw[wp.userData.side] || 0 : 0), g.userData.body.rotation.y, wp.userData.side ? .12 : -.12); // upright, leaning slightly forward and outward
+    wp.rotation.order = 'YXZ';
+    wp.rotation.set(.12 + (sw ? sw[wp.userData.side] || 0 : 0) + d.x, g.userData.body.rotation.y, (wp.userData.side ? .1 : -.1) + d.z);
   }
 }
 function animate3D(g, moving, dt, fast) {
@@ -1114,7 +1141,7 @@ function renderPicker() {
   }));
 }
 function chooseChar(k) {
-  statusBtn.hidden = !(k >= 8);
+  statusBtn.hidden = !(k >= 8 && k <= 11);
   me.k = k; try { localStorage.setItem('sf-pilgrim', JSON.stringify(me)); } catch (e) { /* storage blocked */ }
   const vis = myAvatar.visible; scene.remove(myAvatar); myAvatar = makeAvatar(me.c, me.n, true, me.k); myAvatar.visible = vis; scene.add(myAvatar);
   if (rideKind) setMount(myAvatar, rideKind);
@@ -1122,7 +1149,7 @@ function chooseChar(k) {
 }
 renderPicker();
 const statusBtn = document.getElementById('statusBtn'), statusModal = document.getElementById('statusModal'), statusImg = document.getElementById('statusImg');
-statusBtn.hidden = !(me.k >= 8);
+statusBtn.hidden = !(me.k >= 8 && me.k <= 11);
 statusBtn.addEventListener('click', () => { statusImg.src = `/status/${me.k}.webp?v=${ASSET_V}`; statusImg.alt = `${CHARS[me.k - 1]} 상태창`; statusModal.hidden = false; });
 statusModal.addEventListener('click', () => { statusModal.hidden = true; });
 addEventListener('keydown', e => { if (e.key === 'Escape') statusModal.hidden = true; });
@@ -1217,6 +1244,7 @@ function syncPeers(list) {
     if (pr.a === 'bow' && pr.t !== v.lastT) { v.lastT = pr.t; v.bowStart = performance.now(); }
     if (pr.a === 'dance' && pr.t !== v.lastT) { v.lastT = pr.t; v.danceStart = performance.now(); }
     if ((pr.a === 'atk' || pr.a === 'sp') && pr.t !== v.lastT) { v.lastT = pr.t; startAttack(v.g, pr.a, k, color); }
+    if (pr.a === 'tj' && pr.t !== v.lastT) { v.lastT = pr.t; fireTrail(v.g.position.x, v.g.position.z, v.g.rotation.y); timeFx(v.g); }
     v.ride = Number.isInteger(pr.v) && RIDES[pr.v] ? pr.v : 0;
   }
   for (const [k, v] of peerViews) if (!seen.has(k)) { scene.remove(v.g); peerViews.delete(k); }
@@ -1399,7 +1427,7 @@ const SPOTS = [
 ];
 const VIEW_SPOT = { overview: 'glory', nativity: 'nativity', passion: 'passion', interior: 'nave' };
 const PANO_EYE = 1.6; // camera height the panoramas were shot from
-const ASSET_V = '3'; // bump when panoramas, models or sprites are replaced so browsers fetch the new files
+const ASSET_V = '5'; // bump when panoramas, models or sprites are replaced so browsers fetch the new files
 const panoShader = {
   vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
   fragmentShader: `uniform sampler2D map; uniform vec3 C; uniform float yaw; uniform float op; uniform float gR; varying vec3 vW;
@@ -1656,6 +1684,16 @@ const ease = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
 const seg = (t, a, b) => ease((t - a) / (b - a));
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
 const _ax = new THREE.Vector3(), _fw = new THREE.Vector3(), _upV = new THREE.Vector3(0, 1, 0), _cam = new THREE.Vector3(), _p = new THREE.Vector3();
+// swing a bone so the segment to its child points along dir (given in the body frame, rotated by bodyQ)
+const _bodyQ = new THREE.Quaternion(), _bA = new THREE.Vector3(), _bB = new THREE.Vector3(), _bQ = new THREE.Quaternion(), _bQ2 = new THREE.Quaternion();
+function aimBone(bone, child, dir, bodyQ) {
+  if (!bone || !child || !bone.parent) return;
+  bone.getWorldPosition(_bA); child.getWorldPosition(_bB); _bB.sub(_bA); if (_bB.lengthSq() < 1e-8) return; _bB.normalize();
+  _bA.copy(dir).normalize().applyQuaternion(bodyQ);
+  _bQ.setFromUnitVectors(_bB, _bA);
+  bone.getWorldQuaternion(_bQ2); _bQ2.premultiply(_bQ);
+  bone.parent.getWorldQuaternion(_q3); bone.quaternion.copy(_q3.invert().multiply(_bQ2)); bone.updateMatrixWorld(true);
+}
 // turn a bone about a world-space axis, whatever its local axes are
 function rotBone(bone, axis, ang) {
   if (!bone || !ang || !bone.parent) return;
@@ -1720,6 +1758,21 @@ function atkState(g) {
       else { e = seg(t, 1.6, a.dur); s.arm = s.armL = -1.4 * (1 - e); s.sw = s.swL = 1.5 * (1 - e);
         fire('burst', () => { ringFx(P.x, P.z, C, 8, 800); pillarFx(P.x, P.z, C, 9, 800); sparksFx(P.x, 1, P.z, C, 80, 7); shake(.5 * near); sfx('boom', near); }); }
       break;
+    case 12: // the alien floats up glowing, a beam of light from the sky
+      if (t < .5) { e = seg(t, 0, .5); s.arm = s.armL = -1.6 * e; s.y = .3 * e; fire('beam', () => pillarFx(P.x, P.z, C, 14, 1800)); }
+      else if (t < 1.7) { e = seg(t, .5, 1.7); s.arm = s.armL = -1.6 - 1.2 * e; s.y = .3 + 1.6 * Math.sin(e * Math.PI / 2) + Math.sin(t * 9) * .06; s.spin = e * Math.PI * 2;
+        if (t > 1) fire('stars', () => { sparksFx(P.x, 2.5, P.z, '#ffffff', 70, 4); ringFx(P.x, P.z, C, 6, 900); }); }
+      else { e = seg(t, 1.7, a.dur); s.arm = s.armL = -2.8 * (1 - e); s.y = 1.9 * (1 - e); fire('land', () => { ringFx(P.x, P.z, C, 4, 600); sfx('boom', near * .5); }); }
+      break;
+    case 13: case 14: // basketball: a run-up, a huge leap with both arms high, and a slam (a block for the centre)
+      if (t < .35) { e = seg(t, 0, .35); s.y = -.25 * e; s.arm = s.armL = .4 * e; s.lunge = .3 * e; }
+      else if (t < .95) { e = seg(t, .35, .95); s.y = -.25 + 2.6 * Math.sin(e * Math.PI / 2); s.arm = s.armL = .4 - 3.4 * e; s.lunge = .3 + .5 * e; if (a.k === 14) s.spin = 0;
+        fire('jump', () => { sfx('slash', near); ringFx(P.x, P.z, C, 2.5, 500); }); }
+      else if (t < 1.1) { e = seg(t, .95, 1.1); s.y = 2.35 * (1 - e); s.arm = s.armL = -3 + (a.k === 13 ? 2.2 : .6) * e; s.lunge = .8;
+        if (a.k === 13) fire('slam', () => { const fx = P.x + Math.sin(yaw) * 1.2, fz = P.z + Math.cos(yaw) * 1.2; ringFx(fx, fz, C, 8, 800); sparksFx(fx, 2.2, fz, '#ff9a3a', 80, 7); flashFx(fx, 2.4, fz, '#ffb04a'); shake(.8 * near); sfx('boom', near); }); }
+      else { e = seg(t, 1.3, a.dur); s.arm = s.armL = (a.k === 13 ? -.8 : -2.4) * (1 - e); s.lunge = .8 * (1 - e);
+        if (a.k === 14) fire('wall', () => { pillarFx(P.x + Math.sin(yaw) * 1.4, P.z + Math.cos(yaw) * 1.4, C, 5, 900); ringFx(P.x, P.z, C, 7, 800); shake(.6 * near); sfx('boom', near); }); }
+      break;
     default: // everyone else: a rising whirlwind
       if (t < .3) { e = seg(t, 0, .3); s.arm = s.armL = -2.8 * e; }
       else if (t < 1.3) { e = seg(t, .3, 1.3); s.arm = s.armL = -2.8; s.spin = e * Math.PI * 4; s.y = .6 * Math.sin(e * Math.PI); fire('pillar', () => pillarFx(P.x, P.z, C, 6, 1000)); }
@@ -1730,14 +1783,33 @@ function atkState(g) {
 // called right after the walk clip is sampled: riding pose and attack pose on top of it
 function applyPose(g) {
   const u = g.userData, B = u.bones; u.wSwing = null; if (!B) return;
+  if (u.base && (!u.walkAction || u.walkAction.paused)) { for (const [b, q] of u.base) b.quaternion.copy(q); }
+  else if (u.rest) for (const [b, q] of u.rest) b.quaternion.copy(q);
   g.updateMatrixWorld(true);
   u.body.getWorldQuaternion(_q1); _ax.set(1, 0, 0).applyQuaternion(_q1); _fw.set(0, 0, 1).applyQuaternion(_q1);
   const s = atkState(g);
-  if (u.mount === 1) { // astride the saddle: thighs forward and apart, shins down, hands on the reins
-    rotBone(B.LeftUpLeg, _ax, -1.35); rotBone(B.RightUpLeg, _ax, -1.35);
-    rotBone(B.LeftUpLeg, _fw, .4); rotBone(B.RightUpLeg, _fw, -.4);
-    rotBone(B.LeftLeg, _ax, 1.45); rotBone(B.RightLeg, _ax, 1.45);
-    if (!s) { rotBone(B.LeftArm, _ax, -.6); rotBone(B.RightArm, _ax, -.6); rotBone(B.LeftForeArm, _ax, -.7); rotBone(B.RightForeArm, _ax, -.7); }
+  // seated and holding poses: aim each limb along a direction in the body frame (x = left, y = up, z = forward),
+  // so the result does not depend on how the walk clip happened to leave the arm
+  const L = (a, b, c) => new THREE.Vector3(a, b, c), mirror = (v) => new THREE.Vector3(-v.x, v.y, v.z), BQ = _bodyQ.copy(_q1);
+  const limb = (up, low, end, d1, d2) => { aimBone(B[up], B[low], d1, BQ); aimBone(B[low], B[end], d2, BQ); };
+  const pair = (side, d1, d2) => { // side: 'Arm' or 'Leg'; d1/d2 given for the LEFT limb, mirrored for the right
+    const a1 = d1.clone(), a2 = d2.clone();
+    if (side === 'Arm') { limb('LeftArm', 'LeftForeArm', 'LeftHand', a1, a2); limb('RightArm', 'RightForeArm', 'RightHand', mirror(a1).clone(), mirror(a2).clone()); }
+    else { limb('LeftUpLeg', 'LeftLeg', 'LeftFoot', a1, a2); limb('RightUpLeg', 'RightLeg', 'RightFoot', mirror(a1).clone(), mirror(a2).clone()); }
+  };
+  if (u.mount === 1) { // astride the saddle: thighs forward and apart, shins down to the stirrups, hands low on the reins
+    pair('Leg', L(.38, -.62, .68), L(.06, -1, -.16)); // thighs down round the barrel, heels a little back
+    if (!s) pair('Arm', L(.14, -.9, .35), L(-.1, -.3, 1)); // elbows at the sides, fists low over the withers
+  } else if (u.mount === 5) { // on the cruiser: feet forward on the pegs, arms reaching out to the wide bars, a slight lean
+    rotBone(B.Spine02, _ax, .1);
+    pair('Leg', L(.28, -.12, 1), L(.1, -.75, .65));
+    pair('Arm', L(.45, -.5, .75), L(.15, -.15, 1));
+  } else if (RIDES[u.mount] && RIDES[u.mount].open) { // driver's seat: legs out under the dash, hands on the wheel
+    pair('Leg', L(.12, -.1, 1), L(.04, -.35, 1));
+    pair('Arm', L(.22, -.62, .75), L(-.12, -.05, 1));
+  } else if (u.weapons && !s) { // standing: the fist closes round the shaft in front of the hip
+    limb('RightArm', 'RightForeArm', 'RightHand', L(-.12, -.97, .2).clone(), L(-.05, -.25, 1).clone());
+    if (u.weapons.length > 1) limb('LeftArm', 'LeftForeArm', 'LeftHand', L(.12, -.97, .2).clone(), L(.05, -.25, 1).clone());
   }
   if (!s) return;
   rotBone(B.Spine02, _upV, s.tw);
@@ -1875,7 +1947,10 @@ function engine(on) {
 function engineUpdate(R, v, thr) {
   if (!eng || !R.gears) return;
   const c = actx, span = R.boost / R.gears, sp = Math.abs(v), gear = Math.min(R.gears - 1, Math.floor(sp / span)), rpm = .22 + .78 * Math.min(1, (sp - gear * span) / span);
-  const f0 = 36 + rpm * 100 + gear * 4, now = c.currentTime;
+  const now = c.currentTime;
+  if (R.ev) { const f = 90 + sp * 14; eng.o1.frequency.setTargetAtTime(f, now, .05); eng.o2.frequency.setTargetAtTime(f * 1.5, now, .05);
+    eng.f.frequency.setTargetAtTime(1200 + sp * 30, now, .08); eng.g.gain.setTargetAtTime(soundOn ? (thr ? .03 : .012) : 0, now, .08); return; }
+  const f0 = 36 + rpm * 100 + gear * 4;
   eng.o1.frequency.setTargetAtTime(f0, now, .04); eng.o2.frequency.setTargetAtTime(f0 * .5, now, .04);
   eng.f.frequency.setTargetAtTime(380 + rpm * (thr ? 1900 : 700), now, .08);
   eng.g.gain.setTargetAtTime(soundOn ? (thr ? .07 : .035) : 0, now, .08);
@@ -1953,8 +2028,10 @@ function loadRide(k) {
     obj.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(obj); const c = box.getCenter(new THREE.Vector3());
     obj.position.set(-c.x, -box.min.y, -c.z);
     obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true;
-      if (R.rider) matte(o.material, .04); else for (const m of [].concat(o.material)) { if (m.emissive) { m.emissive.setRGB(0, 0, 0); m.emissiveMap = null; } m.envMapIntensity = 1.1; m.needsUpdate = true; } } });
-    const wrap = new THREE.Group(); wrap.add(obj); wrap.userData.h = box.max.y - box.min.y; res(wrap);
+      if (R.horse) matte(o.material, .04); else for (const m of [].concat(o.material)) { if (m.emissive) { m.emissive.setRGB(0, 0, 0); m.emissiveMap = null; } m.envMapIntensity = 1.1; m.needsUpdate = true; } } });
+    const wrap = new THREE.Group(); wrap.add(obj); wrap.userData.h = box.max.y - box.min.y;
+    if (R.wheelR) { try { splitWheels(obj, wrap, R); } catch (e) { console.warn('wheels', e); } }
+    res(wrap);
   }, undefined, () => res(null)));
   return rideCache[k];
 }
@@ -1963,22 +2040,156 @@ function setMount(g, kind, force) {
   if (u.vehicle && (u.mount !== kind || !kind)) { g.remove(u.vehicle); u.vehicle = null; }
   u.mount = kind; u.body.visible = true; u.label.position.y = 2.15;
   if (!kind || u.vehicle) return;
-  loadRide(kind).then(p => { if (!p || u.mount !== kind || u.vehicle) return; const v = p.clone(true); u.vehicle = v; g.add(v); });
+  loadRide(kind).then(p => { if (!p || u.mount !== kind || u.vehicle) return; const v = p.clone(true);
+    v.userData.wheels = []; v.traverse(o => { if (o.userData.spinR) v.userData.wheels.push(o); });
+    u.vehicle = v; g.add(v); });
 }
 function rideVisual(g, now, speed, accel) {
   const u = g.userData, R = RIDES[u.mount], v = u.vehicle;
-  if (u.weapons) for (const wp of u.weapons) wp.visible = !R || R.rider;
-  if (!R) return;
+  if (u.weapons) for (const wp of u.weapons) wp.visible = !R || !!R.horse;
+  // frame time, yaw rate and longitudinal acceleration (peers: derived from their motion)
+  const t = performance.now(), dt = Math.min(.05, Math.max(.004, (t - (u._rvT || t - 16)) / 1000)); u._rvT = t;
+  let dyaw = g.rotation.y - (u._rvYaw ?? g.rotation.y); dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw)); u._rvYaw = g.rotation.y;
+  const laRaw = THREE.MathUtils.clamp(accel || (speed - (u._rvV ?? speed)) / dt, -25, 25); u._rvV = speed;
+  const lp = 1 - Math.exp(-dt / .18); u._la = (u._la || 0) + (laRaw - (u._la || 0)) * lp; const la = u._la;
+  if (u.reins && !(R && R.horse)) u.reins.forEach(r => { r.visible = false; });
+  if (!R) { u.body.rotation.z = 0; u.body.position.x = 0; u.susp = null; return; }
+  u.body.position.x = R.open ? .36 : 0; // open car: the driver sits on the left
   const h = v ? v.userData.h : (R.rider ? 2 : 1.3), sp = Math.abs(speed);
-  if (R.rider) { // the horse bobs and rocks with its gait; the rider sits in the saddle
+  u._lat = (u._lat || 0) + (THREE.MathUtils.clamp(speed * dyaw / dt, -14, 14) - (u._lat || 0)) * lp;
+  const lat = u._lat; // centripetal acceleration m/s² (left turn > 0), smoothed
+  const S = u.susp || (u.susp = { p: 0, pv: 0, r: 0, rv: 0 });
+  const spring = (tp, tr, K, D) => { S.pv += (-K * (S.p - tp) - D * S.pv) * dt; S.p += S.pv * dt; S.rv += (-K * (S.r - tr) - D * S.rv) * dt; S.r += S.rv * dt; };
+  if (R.horse) { // the horse bobs and rocks with its gait and leans a little into turns; the rider sits in the saddle
+    spring(0, -Math.atan(lat / 9.81) * .5, 30, 9);
     const f = Math.min(1, sp / 5), ph = now / 1000 * (1.6 + sp * .28) * Math.PI * 2, bob = Math.abs(Math.sin(ph)) * .14 * f;
-    if (v) { v.position.y = bob; v.rotation.x = Math.sin(ph) * .045 * f; }
-    u.body.visible = true; u.body.position.y += h * .66 - .98 + bob; u.label.position.y = 2.15 + h * .66 - .9;
-  } else { // the driver is inside: the car squats under power and leans into turns
-    u.body.visible = false;
-    if (v) { v.rotation.x = THREE.MathUtils.clamp(-accel * .004, -.04, .04); v.position.y = sp > 1 ? Math.sin(now / 37) * .004 : 0; }
+    if (v) { v.position.y = bob; v.rotation.x = Math.sin(ph) * .045 * f; v.rotation.z = S.r; }
+    u.body.visible = true; u.body.position.y += h * .66 + .1 - hipHeight(u) + bob; u.body.rotation.z = S.r; u.label.position.y = 2.15 + h * .66 - .9;
+    if (v) reins(g, v, R, h); // leather from each fist to the bit
+  } else if (R.bike) { // a two-wheeler leans into the turn by atan(a_lat / g) and lifts its front under hard power
+    const lean = THREE.MathUtils.clamp(-Math.atan(lat / 9.81), -.75, .75);
+    const pitch = la > 5 && sp < 14 ? -Math.min(.32, (la - 5) * .06) : THREE.MathUtils.clamp(-la * .004, -.05, .05);
+    spring(pitch, lean, 26, 7.5);
+    const lift = S.p < 0 ? Math.sin(-S.p) * R.len * .45 : 0;
+    if (v) { v.rotation.x = S.p; v.rotation.z = S.r; v.position.y = lift; rollWheels(v, speed, dt, dyaw); }
+    u.body.visible = true; u.body.position.y += h * .5 + .1 - hipHeight(u) + lift; u.body.rotation.z = S.r; u.body.rotation.x = S.p;
+    u.label.position.y = 2.15 + h * .5 - .8;
+  } else { // the driver is inside: springs let the body squat under power, dive under braking and roll out of turns
+    spring(THREE.MathUtils.clamp(-la * .006, -.07, .07), THREE.MathUtils.clamp(lat * .007, -.08, .08), 70, 8);
+    u.body.visible = !!R.open; if (R.open) { u.body.position.y += .6 - hipHeight(u) + S.p * .3; u.body.rotation.x = S.p; u.body.rotation.z = S.r; }
+    if (v) { v.rotation.x = S.p; v.rotation.z = S.r; v.position.y = -Math.abs(S.p) * .25 + (sp > 1 ? Math.sin(now / 37) * .003 : 0); rollWheels(v, speed, dt, dyaw); }
     u.label.position.y = h + .6;
   }
+}
+// ---- wheels: the generated vehicles are one mesh, so cut each tyre+rim out by position and give it its own axle ----
+// In the ride's frame (metres, nose to +z, ground at y = 0) the lowest vertices are the tyre contact patches: they cluster at the
+// front and rear axles. Everything inside the wheel radius around an axle (and, for a car, out at the track width) becomes a wheel.
+function splitWheels(obj, wrap, R) {
+  wrap.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(wrap.matrixWorld).invert(), meshes = [];
+  obj.traverse(o => { if (o.isMesh && o.geometry.index) meshes.push(o); });
+  const v = new THREE.Vector3(); let W = 0; const lows = [];
+  const local = meshes.map(m => { const M = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld), pa = m.geometry.attributes.position, P = new Float32Array(pa.count * 3);
+    for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(M); P[i * 3] = v.x; P[i * 3 + 1] = v.y; P[i * 3 + 2] = v.z; W = Math.max(W, Math.abs(v.x)); if (v.y < .04) lows.push(v.z); }
+    return { m, M, P }; });
+  if (lows.length < 20) return;
+  lows.sort((a, b) => a - b); let gi = 0, gap = 0;
+  for (let i = 1; i < lows.length; i++) if (lows[i] - lows[i - 1] > gap) { gap = lows[i] - lows[i - 1]; gi = i; }
+  if (gap < R.len * .25) return; // not two separate axles
+  const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+  const axles = [mean(lows.slice(0, gi)), mean(lows.slice(gi))]; // rear, front
+  const r = R.wheelR, bike = !!R.bike, tw = .36;
+  const wheelOf = (x, y, z) => {
+    for (let a = 0; a < 2; a++) {
+      if (Math.hypot(y - r, z - axles[a]) > r * 1.04) continue;
+      if (bike) return Math.abs(x) < .22 ? a : -1;
+      if (Math.abs(x) > W - tw) return a * 2 + (x > 0 ? 1 : 0);
+    }
+    return -1;
+  };
+  const groups = {}; // wheel id -> pivot group
+  const GET = [THREE.BufferAttribute.prototype.getX, THREE.BufferAttribute.prototype.getY, THREE.BufferAttribute.prototype.getZ, THREE.BufferAttribute.prototype.getW];
+  for (const { m, M, P } of local) {
+    const g0 = m.geometry, idx = g0.index.array, n = g0.attributes.position.count, wid = new Int8Array(n);
+    for (let i = 0; i < n; i++) wid[i] = wheelOf(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+    const body = [], wt = {};
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = wid[idx[t]], b = wid[idx[t + 1]], c = wid[idx[t + 2]];
+      if (a >= 0 && a === b && b === c) (wt[a] = wt[a] || []).push(idx[t], idx[t + 1], idx[t + 2]); else body.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
+    if (!Object.keys(wt).length) continue;
+    const nm = new THREE.Matrix3().getNormalMatrix(M);
+    for (const id of Object.keys(wt)) {
+      const tris = wt[id], remap = new Map(), keep = [];
+      const ix = tris.map(o => { if (!remap.has(o)) { remap.set(o, keep.length); keep.push(o); } return remap.get(o); });
+      const cz = axles[bike ? +id : id >> 1], cx = bike ? 0 : (id & 1 ? 1 : -1) * (W - tw / 2);
+      const geo = new THREE.BufferGeometry();
+      for (const name of Object.keys(g0.attributes)) {
+        const src = g0.attributes[name], k = src.itemSize, out = new Float32Array(keep.length * k);
+        keep.forEach((o, j) => { for (let q = 0; q < k; q++) out[j * k + q] = GET[q].call(src, o); });
+        geo.setAttribute(name, new THREE.BufferAttribute(out, k, src.normalized));
+      }
+      const pos = geo.attributes.position; for (let j = 0; j < pos.count; j++) { v.fromBufferAttribute(pos, j).applyMatrix4(M); pos.setXYZ(j, v.x - cx, v.y - r, v.z - cz); }
+      if (geo.attributes.normal) { const nn = geo.attributes.normal; for (let j = 0; j < nn.count; j++) { v.fromBufferAttribute(nn, j).applyMatrix3(nm).normalize(); nn.setXYZ(j, v.x, v.y, v.z); } }
+      if (geo.attributes.tangent) geo.deleteAttribute('tangent');
+      geo.setIndex(ix);
+      let pivot = groups[id];
+      if (!pivot) { pivot = groups[id] = new THREE.Group(); pivot.position.set(cx, r, cz); pivot.userData.steer = (bike ? +id : id >> 1) === 1; wrap.add(pivot);
+        const spin = new THREE.Group(); spin.userData.spinR = r; pivot.add(spin); }
+      const wm = new THREE.Mesh(geo, m.material); wm.castShadow = true; pivot.children[0].add(wm);
+    }
+    g0.setIndex(body); // only once every wheel piece was built
+  }
+}
+// roll each wheel by distance / radius; the front ones turn by the bicycle-model steer angle δ = wheelbase · yaw rate / speed
+function rollWheels(v, speed, dt, dyaw) {
+  const ws = v.userData.wheels; if (!ws || !ws.length) return;
+  const steer = Math.abs(speed) > .5 ? THREE.MathUtils.clamp(2.6 * (dyaw / dt) / speed, -.55, .55) : 0;
+  for (const w of ws) { w.rotation.x += speed * dt / w.userData.spinR; const pv = w.parent; if (pv.userData.steer) pv.rotation.y += (steer - pv.rotation.y) * Math.min(1, dt * 10); }
+}
+const REIN_GEO = new THREE.CylinderGeometry(.011, .011, 1, 5, 1, true).translate(0, .5, 0).rotateX(Math.PI / 2);
+const reinMat = new THREE.MeshStandardMaterial({ color: '#3a2414', roughness: .8 });
+const _r1 = new THREE.Vector3(), _r2 = new THREE.Vector3();
+function reins(g, v, R, h) {
+  const u = g.userData, B = u.bones;
+  if (!u.reins) { u.reins = [0, 1].map(() => { const m = new THREE.Mesh(REIN_GEO, reinMat); m.castShadow = true; g.add(m); return m; }); }
+  g.updateMatrixWorld(true);
+  u.reins.forEach((m, i) => {
+    const hand = B && B[i ? 'RightHand' : 'LeftHand'];
+    if (hand) hand.getWorldPosition(_r1); else _r1.set(i ? -.2 : .2, h * .66 + .45, .35).applyMatrix4(g.matrixWorld);
+    _r2.set(i ? -.07 : .07, h * .6, R.len / 2 - .12).applyMatrix4(v.matrixWorld); // the bit, at the horse's mouth
+    g.worldToLocal(_r1); g.worldToLocal(_r2);
+    m.position.copy(_r1); m.lookAt(_r2.clone().applyMatrix4(g.matrixWorld)); m.scale.set(1, 1, _r1.distanceTo(_r2)); m.visible = true;
+  });
+}
+// height of the hip joint above the avatar's feet, measured once from the rig (cloak and sprites: a fixed guess)
+const _hipV = new THREE.Vector3();
+function hipHeight(u) {
+  if (u.hipH) return u.hipH;
+  const H = u.bones && u.bones.Hips; if (!H || !u.model3d) return .95;
+  u.model3d.updateMatrixWorld(true); u.model3d.worldToLocal(H.getWorldPosition(_hipV)); u.hipH = _hipV.y * u.model3d.scale.y; return u.hipH;
+}
+// 88 mph: lightning, fire tracks, and the car arrives somewhere else
+const TRAIL_GEO = new THREE.PlaneGeometry(.32, 24).rotateX(-Math.PI / 2).translate(0, .03, -12);
+function fireTrail(x, z, yaw) {
+  const grp = new THREE.Group(); grp.position.set(x, 0, z); grp.rotation.y = yaw;
+  for (const sx of [-.78, .78]) { const m = new THREE.Mesh(TRAIL_GEO, addMat('#ff7a1a', fadeTex)); m.position.x = sx; grp.add(m); }
+  addFx(grp, 3200, k => { grp.children.forEach((c, i) => { c.material.opacity = (1 - k) * (.75 + Math.sin(performance.now() / 40 + i) * .25); }); });
+}
+function timeFx(g) {
+  const P = g.position, near = nearMe(g);
+  flashFx(P.x, 1, P.z, '#9fdcff'); flashFx(P.x, 1, P.z, '#ffffff'); ringFx(P.x, P.z, '#7fd0ff', 7, 700);
+  sparksFx(P.x, 1, P.z, '#bfe8ff', 90, 7); pillarFx(P.x, P.z, '#7fd0ff', 5, 500); shake(.8 * near); sfx('boom', near);
+}
+function timeJump() {
+  fireTrail(myPos.x, myPos.z, myRot); timeFx(myAvatar); toast('⚡ 시속 88마일(141km/h) 돌파! 시간 점프!');
+  if (room) room.presence({ a: 'tj', t: Date.now() }).catch(() => {});
+  setTimeout(() => {
+    if (rideKind !== 4) return;
+    const nx = clampX((Math.random() * 2 - 1) * 150), nz = clampZ((Math.random() * 2 - 1) * 40);
+    vDelta.set(nx - myPos.x, 0, nz - myPos.z); myPos.x = nx; myPos.z = nz; camera.position.add(vDelta); controls.target.add(vDelta);
+    myAvatar.position.copy(myPos); timeFx(myAvatar); rideV = Math.min(rideV, 25); sendPresence(true);
+  }, 450);
 }
 function setRide(k) {
   k = RIDES[k] ? k : 0;
@@ -2038,15 +2249,17 @@ function updateRide(dt, now) {
   document.getElementById('hudSpd').textContent = kmh;
   document.getElementById('hudBar').style.width = Math.min(100, sp / R.boost * 100) + '%';
   document.getElementById('hudGear').textContent = R.gears
-    ? (rideV < -.3 ? 'R' : sp < .3 ? 'N' : `${Math.min(R.gears, 1 + Math.floor(sp / (R.boost / R.gears)))}단`)
+    ? (rideV < -.3 ? 'R' : sp < .3 ? (R.ev ? 'P' : 'N') : R.ev ? 'D · 전기' : `${Math.min(R.gears, 1 + Math.floor(sp / (R.boost / R.gears)))}단`)
     : (sp < .4 ? '정지' : sp < 2.5 ? '평보' : sp < 6 ? '속보' : sp < 11 ? '구보' : '습보');
   if (sp < .3) { launchT0 = thr ? performance.now() : null; if (!thr && launchShown) launchShown = false; }
   else if (launchT0 && !launchShown && sp >= 27.78) { launchShown = true; document.getElementById('hudLaunch').textContent = `0→100 ${((performance.now() - launchT0) / 1000).toFixed(1)}초`; }
   engineUpdate(R, rideV, thr);
+  if (R.timeJump) { if (!timeArmed && sp < 30) timeArmed = true; else if (timeArmed && sp >= 39.34) { timeArmed = false; timeJump(); } }
   setInside(insideAt(myPos.x, myPos.z));
   sendPresence(false);
 }
 
+if (/[?&]debug=1/.test(location.search)) window.__dbg = { camera, controls, get me() { return myAvatar; }, get pos() { return myPos; } };
 // ---------- loop ----------
 applyTime(timeEl.value / 100); setPhase('now');
 const clock = new THREE.Clock();
