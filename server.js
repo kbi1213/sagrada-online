@@ -62,7 +62,7 @@ function cleanPresence(p) {
       case 'w': out.w = v === 1 ? 1 : 0; break;
       case 'x': case 'z': { const n = num(v, -200, 200); if (n !== undefined) out[k] = Math.round(n * 100) / 100; break; }
       case 'r': { const n = num(v, -10, 10); if (n !== undefined) out.r = Math.round(n * 100) / 100; break; }
-      case 'a': if (v === 'bow') out.a = 'bow'; break;
+      case 'a': if (v === 'bow' || v === 'dance') out.a = v; break;
       case 's': if (SPOTS.has(v)) out.s = v; break;
       case 't': { const n = num(v, 0, 1e14); if (n !== undefined) out.t = n; break; }
     }
@@ -93,7 +93,7 @@ function allow(ws) {
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
 wss.on('connection', (ws) => {
   ws.id = crypto.randomBytes(6).toString('hex');
-  ws.ch = null; ws.p = {}; ws.alive = true; ws.lastCandle = 0; ws.lastScreen = 0;
+  ws.ch = null; ws.p = {}; ws.alive = true; ws.lastCandle = 0; ws.lastScreen = 0; ws.lastChat = 0;
   ws.bucket = { tokens: 60, last: Date.now() };
   ws.on('pong', () => { ws.alive = true; });
 
@@ -137,6 +137,14 @@ wss.on('connection', (ws) => {
       c.candles.push({ x, z, at: now });
       if (c.candles.length > CANDLES_PER_CHANNEL) c.candles.shift();
       broadcast(ws.ch, { type: 'event', topic: 'candle', id: ws.id, data: { x, z } }); // includes sender (renders on echo)
+    } else if (m.type === 'event' && m.topic === 'chat') {
+      const now = Date.now();
+      if (now - ws.lastChat < 1000) return; // one line per second per person
+      const t = typeof m.data?.t === 'string' ? m.data.t.replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯]/g, '').trim().slice(0, 80) : '';
+      if (!t) return;
+      ws.lastChat = now;
+      // name and colour come from the sender's own presence, never from the chat message
+      broadcast(ws.ch, { type: 'event', topic: 'chat', id: ws.id, data: { t, n: ws.p.n || '순례자', c: ws.p.c || '#c9a46a' } });
     } else if (m.type === 'event' && m.topic === 'screen') {
       const now = Date.now();
       if (now - ws.lastScreen < 5000) return; // one change per 5 s per person

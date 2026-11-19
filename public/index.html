@@ -47,7 +47,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 input[type=range]{width:100%;accent-color:var(--accent);margin:0}
 .ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
 .hint{margin:0;font-size:12px;color:var(--muted);line-height:1.5}
-.walk{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:6px}
+.walk{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:6px}
 button:disabled{opacity:.4;cursor:default}
 .status{font-size:12px;color:var(--ink);font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:6px}
 .status::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted)}
@@ -97,6 +97,22 @@ body.touring .panel, body.touring .title{display:none}
 #screenForm input{min-width:0;font:13px var(--body);color:var(--ink);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 .screen-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
 .screen-row button{font-size:12px;padding:8px 4px}
+
+#chatLog{position:fixed;right:max(16px, env(safe-area-inset-right,0px));bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:4;width:min(320px, calc(100% - 32px));
+  display:grid;gap:4px;pointer-events:none;text-shadow:0 1px 6px rgba(0,0,0,.8)}
+#chatLog p{margin:0;font-size:13px;line-height:1.4;background:rgba(24,19,14,.55);border-radius:8px;padding:5px 9px;overflow-wrap:anywhere;transition:opacity .6s}
+#chatLog p.old{opacity:.35}
+#chatLog b{font-weight:600;margin-right:6px}
+#chatOpen{position:fixed;right:max(16px, env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:4;
+  background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);padding:9px 14px}
+#chatForm{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:6;width:min(560px, calc(100% - 32px));
+  display:grid;grid-template-columns:1fr auto;gap:6px;background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid var(--line);border-radius:12px;padding:8px}
+#chatInput{min-width:0;font:15px var(--body);color:var(--ink);background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+body.touring #chatLog{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+body.touring #chatForm{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+@media (max-width:520px){ #chatLog{top:calc(120px + env(safe-area-inset-top,0px));bottom:auto;left:max(16px, env(safe-area-inset-left,0px));right:auto}
+  #chatOpen{top:calc(64px + env(safe-area-inset-top,0px));bottom:auto} #chatForm{top:calc(110px + env(safe-area-inset-top,0px));bottom:auto} }
 .gal-nav{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 @media (max-width:520px){ .title{max-width:calc(100% - 150px)} .gallery img{max-height:32vh} }
 </style>
@@ -141,6 +157,7 @@ body.touring .panel, body.touring .title{display:none}
     <div class="walk">
       <button id="walkBtn" aria-pressed="false">순례 시작</button>
       <button id="bowBtn" disabled>합장</button>
+      <button id="danceBtn" disabled>비보잉</button>
       <button id="candleBtn" disabled>초 밝히기</button>
     </div>
     <p class="me-line">내 이름 <b id="myName"></b></p>
@@ -166,6 +183,9 @@ body.touring .panel, body.touring .title{display:none}
     <button id="tourExit">3D로 돌아가기</button></div>
   <div id="tourChips" role="group" aria-label="장소"></div>
 </div>
+<div id="chatLog" hidden aria-live="polite"></div>
+<button id="chatOpen" type="button">말하기 (Enter)</button>
+<form id="chatForm" hidden><input id="chatInput" maxlength="80" autocomplete="off" placeholder="하고 싶은 말 (80자) · Enter로 보내기, Esc로 닫기" aria-label="채팅 입력"><button type="submit">보내기</button></form>
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
@@ -871,7 +891,7 @@ function nameSprite(text, isMe) {
   s.scale.set(3.2, .6, 1); s.position.y = 2.25; return s;
 }
 function makeAvatar(color, name, isMe) {
-  const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
+  const g = new THREE.Group(), body = new THREE.Group(); body.rotation.order = 'YXZ'; g.add(body);
   const robeM = new THREE.MeshStandardMaterial({ color, roughness: .8 });
   const robe = new THREE.Mesh(new THREE.ConeGeometry(.42, 1.25, 14), robeM); robe.position.y = .62; robe.castShadow = true; body.add(robe);
   const head = new THREE.Mesh(new THREE.SphereGeometry(.2, 14, 10), skinMat); head.position.y = 1.42; body.add(head);
@@ -886,13 +906,13 @@ const BOUNDS = { x0: -195, x1: 195, z0: -56, z1: 56 };
 const clampX = x => Math.min(BOUNDS.x1, Math.max(BOUNDS.x0, x)), clampZ = z => Math.min(BOUNDS.z1, Math.max(BOUNDS.z0, z));
 const insideAt = (x, z) => (Math.abs(x) < 22.5 && z > -30 && z < 45) || (Math.abs(x) < 30 && z > -17 && z < 13) || (z <= -30 && Math.hypot(x, z + 30) < 15);
 
-let walking = false, room = null, dest = null, lastSent = 0, sentKey = '', bowStart = -1e9;
+let walking = false, room = null, dest = null, lastSent = 0, sentKey = '', bowStart = -1e9, danceStart = -1e9;
 const myPos = new THREE.Vector3(62, 0, -2); let myRot = -Math.PI / 2;
 const myAvatar = makeAvatar(me.c, me.n, true); myAvatar.visible = false; scene.add(myAvatar);
 const destMark = new THREE.Mesh(new THREE.RingGeometry(.3, .45, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#f4ecdc', transparent: true, opacity: .7 }));
 destMark.visible = false; scene.add(destMark);
 const keys = {};
-const walkBtn = document.getElementById('walkBtn'), bowBtn = document.getElementById('bowBtn'), candleBtn = document.getElementById('candleBtn');
+const walkBtn = document.getElementById('walkBtn'), bowBtn = document.getElementById('bowBtn'), candleBtn = document.getElementById('candleBtn'), danceBtn = document.getElementById('danceBtn');
 const hintEl = document.getElementById('hint'), hint0 = hintEl.textContent;
 const toastEl = document.getElementById('toast'); let toastT = 0;
 function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => toastEl.hidden = true, 3200); }
@@ -907,7 +927,7 @@ function sendPresence(force) {
 function startWalk() {
   walking = true; myAvatar.visible = true; currentView = null;
   document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', 'false'));
-  walkBtn.setAttribute('aria-pressed', 'true'); walkBtn.textContent = '순례 그만'; bowBtn.disabled = candleBtn.disabled = false;
+  walkBtn.setAttribute('aria-pressed', 'true'); walkBtn.textContent = '순례 그만'; bowBtn.disabled = candleBtn.disabled = danceBtn.disabled = false;
   controls.minDistance = 2.5; controls.maxDistance = 70; controls.maxPolarAngle = Math.PI * .49;
   const t1 = myPos.clone().add(new THREE.Vector3(0, 1.5, 0));
   const back = new THREE.Vector3(-Math.sin(myRot), 0, -Math.cos(myRot)).multiplyScalar(11);
@@ -918,11 +938,12 @@ function startWalk() {
 }
 function stopWalk() {
   walking = false; myAvatar.visible = false; dest = null; destMark.visible = false;
-  walkBtn.setAttribute('aria-pressed', 'false'); walkBtn.textContent = '순례 시작'; bowBtn.disabled = candleBtn.disabled = true;
+  walkBtn.setAttribute('aria-pressed', 'false'); walkBtn.textContent = '순례 시작'; bowBtn.disabled = candleBtn.disabled = danceBtn.disabled = true;
   hintEl.textContent = hint0; sendPresence(true);
 }
 walkBtn.addEventListener('click', () => walking ? setView('overview') : startWalk());
 bowBtn.addEventListener('click', () => { bowStart = performance.now(); if (room) room.presence({ a: 'bow', t: Date.now() }).catch(() => {}); });
+danceBtn.addEventListener('click', () => { danceStart = performance.now(); if (room) room.presence({ a: 'dance', t: Date.now() }).catch(() => {}); });
 
 // candles: a moment sent to everyone here (not stored)
 const flameTex = (() => { const c = cv(64, 64), g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -972,15 +993,25 @@ function syncPeers(list) {
     if (!v || v.name !== name || v.color !== color) {
       if (v) scene.remove(v.g);
       const g = makeAvatar(color, name, false); g.position.set(clampX(pr.x), 0, clampZ(pr.z)); scene.add(g);
-      v = { g, name, color, lastT: pr.t, bowStart: -1e9, r: Number(pr.r) || 0 }; peerViews.set(p.peer, v);
+      v = { g, name, color, lastT: pr.t, bowStart: -1e9, danceStart: -1e9, r: Number(pr.r) || 0 }; peerViews.set(p.peer, v);
     }
     v.tx = clampX(pr.x); v.tz = clampZ(pr.z); v.tr = Number.isFinite(pr.r) ? pr.r : 0;
     if (pr.a === 'bow' && pr.t !== v.lastT) { v.lastT = pr.t; v.bowStart = performance.now(); }
+    if (pr.a === 'dance' && pr.t !== v.lastT) { v.lastT = pr.t; v.danceStart = performance.now(); }
   }
   for (const [k, v] of peerViews) if (!seen.has(k)) { scene.remove(v.g); peerViews.delete(k); }
   renderStatus();
 }
 const bowAngle = (start, now) => { const k = (now - start) / 1800; return k > 0 && k < 1 ? Math.sin(k * Math.PI) * .6 : 0; };
+// b-boy freeze: dive onto the head, headspin, pop back up
+function danceAnim(body, start, now) {
+  const k = (now - start) / 4200;
+  if (k <= 0 || k >= 1) { body.rotation.y = 0; return false; }
+  const flip = k < .15 ? k / .15 : k > .85 ? (1 - k) / .15 : 1, e = flip * flip * (3 - 2 * flip);
+  body.rotation.x = e * Math.PI; body.position.y = e * 1.68;
+  body.rotation.y = flip >= 1 ? ((now - start) / 70) % (Math.PI * 2) : 0;
+  return true;
+}
 function updatePeers(dt, now) {
   const a = 1 - Math.exp(-dt * 8);
   for (const v of peerViews.values()) {
@@ -989,6 +1020,7 @@ function updatePeers(dt, now) {
     let dr = v.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * a;
     g.userData.body.position.y = moving ? Math.abs(Math.sin(now / 140)) * .08 : 0;
     g.userData.body.rotation.x = bowAngle(v.bowStart, now);
+    danceAnim(g.userData.body, v.danceStart, now);
   }
 }
 
@@ -1089,6 +1121,7 @@ function updateWalk(dt, now) {
   myAvatar.position.copy(myPos); myAvatar.rotation.y = myRot;
   myAvatar.userData.body.position.y = moving ? Math.abs(Math.sin(now / 140)) * .08 : 0;
   myAvatar.userData.body.rotation.x = bowAngle(bowStart, now);
+  danceAnim(myAvatar.userData.body, danceStart, now);
   setInside(insideAt(myPos.x, myPos.z));
   sendPresence(false);
 }
@@ -1289,6 +1322,64 @@ function updateScreen(now) {
   setScreenLive(!tourOn && insideAt(p.x, p.z) && p.distanceTo(SCREEN.pos) < 90 || (!tourOn && currentView === 'interior'));
 }
 
+
+// ---------- typed chat: speech bubbles over pilgrims + a short log ----------
+const chatForm = document.getElementById('chatForm'), chatInput = document.getElementById('chatInput'), chatLog = document.getElementById('chatLog');
+const chatOpenBtn = document.getElementById('chatOpen');
+const cleanChat = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯]/g, '').trim().slice(0, 80);
+function openChat() { chatForm.hidden = false; chatInput.focus(); }
+function closeChat() { chatForm.hidden = true; chatInput.value = ''; chatInput.blur(); }
+chatOpenBtn.addEventListener('click', () => chatForm.hidden ? openChat() : closeChat());
+addEventListener('keydown', e => {
+  if (e.key === 'Enter' && chatForm.hidden && !(e.target.closest && e.target.closest('input,textarea,button'))) { e.preventDefault(); openChat(); }
+  else if (e.key === 'Escape' && !chatForm.hidden) closeChat();
+});
+let lastChatAt = 0;
+chatForm.addEventListener('submit', e => {
+  e.preventDefault(); const t = cleanChat(chatInput.value);
+  if (!t) { closeChat(); return; }
+  if (performance.now() - lastChatAt < 1200) { toast('조금 천천히 말해 주세요'); return; }
+  lastChatAt = performance.now(); chatInput.value = '';
+  if (room && room.connected()) room.emit('chat', { t });
+  else showChat({ t, n: me.n, c: me.c }, true, null);
+});
+function bubbleSprite(text) {
+  const c = cv(512, 160), g = c.getContext('2d');
+  g.font = '500 30px "IBM Plex Sans KR", "Malgun Gothic", sans-serif';
+  const lines = []; let line = '';
+  for (const ch of [...text]) { if (g.measureText(line + ch).width > 440) { lines.push(line); line = ch; } else line += ch; }
+  if (line) lines.push(line);
+  if (lines.length > 3) { lines.length = 3; lines[2] = lines[2].slice(0, -1) + '…'; }
+  const shown = lines, w = Math.min(492, Math.max(...shown.map(l => g.measureText(l).width)) + 40), h = shown.length * 38 + 26;
+  g.fillStyle = 'rgba(250,246,238,.95)'; rrect(g, (512 - w) / 2, 4, w, h, 18);
+  g.beginPath(); g.moveTo(240, h + 3); g.lineTo(256, h + 22); g.lineTo(272, h + 3); g.fill();
+  g.fillStyle = '#1d150d'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  shown.forEach((l, i) => g.fillText(l, 256, 4 + 13 + 19 + i * 38));
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
+  s.scale.set(3.6, 1.125, 1); s.position.y = 3.1; s.userData.born = performance.now(); return s;
+}
+function attachBubble(avatar, text) {
+  if (!avatar) return;
+  if (avatar.userData.bubble) { avatar.remove(avatar.userData.bubble); avatar.userData.bubble.material.map.dispose(); }
+  const b = bubbleSprite(text); avatar.add(b); avatar.userData.bubble = b;
+}
+function showChat(d, isMe, peer) {
+  const t = cleanChat(d.t), n = safeName(d.n), c = safeColor(d.c); if (!t) return;
+  const row = document.createElement('p'), who = document.createElement('b'), msg = document.createElement('span');
+  who.textContent = isMe ? `${n} (나)` : n; who.style.color = c; msg.textContent = t; row.append(who, msg);
+  chatLog.append(row); while (chatLog.children.length > 7) chatLog.firstChild.remove();
+  chatLog.hidden = false; row.dataset.at = String(performance.now());
+  if (isMe) { if (walking) attachBubble(myAvatar, t); }
+  else { const v = peerViews.get(peer); if (v) attachBubble(v.g, t); }
+}
+if (room) room.on('chat', msg => showChat(msg.data || {}, msg.sameTab, msg.peer));
+function updateChat(now) {
+  const all = [myAvatar, ...[...peerViews.values()].map(v => v.g)];
+  for (const a of all) { const b = a.userData.bubble; if (b && now - b.userData.born > 7000) { a.remove(b); b.material.map.dispose(); a.userData.bubble = null; } }
+  for (const row of chatLog.children) row.classList.toggle('old', now - Number(row.dataset.at) > 20000);
+}
+
 // ---------- loop ----------
 applyTime(timeEl.value / 100); setPhase('now');
 const clock = new THREE.Clock();
@@ -1296,8 +1387,8 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.min(clock.getDelta(), .05);
   if (tween) { const k = Math.min(1, (now - tween.s) / tween.d), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
     camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e); if (k >= 1) tween = null; }
-  if (tourOn) { updateTour(now); updateScreen(now); controls.update(); renderer.render(panoScene, camera); return; }
-  updateWalk(dt, now); updatePeers(dt, now); updateCandles(now);
+  if (tourOn) { updateTour(now); updateScreen(now); updateChat(now); controls.update(); renderer.render(panoScene, camera); return; }
+  updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now);
   controls.update(); if (walking && camera.position.y < .4) camera.position.y = .4;
   doPick(); updateScreen(now); renderer.render(scene, camera); if (screenLive) cssRenderer.render(cssScene, camera);
 });
