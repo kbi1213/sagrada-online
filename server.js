@@ -12,6 +12,7 @@ const CHANNEL_CAP = Number(process.env.CHANNEL_CAP) || 50;
 const MAX_CHANNELS = Number(process.env.MAX_CHANNELS) || 100;
 const CANDLE_TTL_MS = 10 * 60 * 1000;
 const CANDLES_PER_CHANNEL = 200;
+const DEFAULT_VIDEO = 'Za3A_9Plm5A'; // big screen in the nave plays this until someone changes it
 const INDEX = path.join(__dirname, 'public', 'index.html');
 const STATIC_RE = /^\/(textures|photos|panos)\/[a-z0-9_-]+\.(jpg|png|webp)$/;
 const SPOTS = new Set(['nativity', 'passion', 'glory', 'nave', 'crossing', 'altar']); // 360° tour spots
@@ -92,7 +93,7 @@ function allow(ws) {
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
 wss.on('connection', (ws) => {
   ws.id = crypto.randomBytes(6).toString('hex');
-  ws.ch = null; ws.p = {}; ws.alive = true; ws.lastCandle = 0;
+  ws.ch = null; ws.p = {}; ws.alive = true; ws.lastCandle = 0; ws.lastScreen = 0;
   ws.bucket = { tokens: 60, last: Date.now() };
   ws.on('pong', () => { ws.alive = true; });
 
@@ -105,7 +106,7 @@ wss.on('connection', (ws) => {
       if (ws.ch !== null) return;
       const ch = channelFor(Number(m.ch));
       if (ch === null) { ws.send(JSON.stringify({ type: 'full' })); ws.close(1013, 'full'); return; }
-      if (!channels.has(ch)) channels.set(ch, { clients: new Set(), candles: [] });
+      if (!channels.has(ch)) channels.set(ch, { clients: new Set(), candles: [], screen: { v: DEFAULT_VIDEO } });
       const c = channels.get(ch);
       ws.ch = ch;
       for (const [k, v] of Object.entries(cleanPresence(m.p))) if (v !== null) ws.p[k] = v;
@@ -115,6 +116,7 @@ wss.on('connection', (ws) => {
         type: 'welcome', id: ws.id, ch,
         peers: [...c.clients].map((o) => ({ id: o.id, p: o.p })),
         candles: c.candles.map(({ x, z }) => ({ x, z })),
+        screen: c.screen,
       }));
       c.clients.add(ws);
       broadcast(ch, { type: 'presence', id: ws.id, p: ws.p }, ws);
@@ -135,6 +137,14 @@ wss.on('connection', (ws) => {
       c.candles.push({ x, z, at: now });
       if (c.candles.length > CANDLES_PER_CHANNEL) c.candles.shift();
       broadcast(ws.ch, { type: 'event', topic: 'candle', id: ws.id, data: { x, z } }); // includes sender (renders on echo)
+    } else if (m.type === 'event' && m.topic === 'screen') {
+      const now = Date.now();
+      if (now - ws.lastScreen < 5000) return; // one change per 5 s per person
+      const v = m.data?.v;
+      if (typeof v !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(v)) return; // YouTube video ids only
+      ws.lastScreen = now;
+      channels.get(ws.ch).screen = { v };
+      broadcast(ws.ch, { type: 'event', topic: 'screen', id: ws.id, data: { v } });
     }
   });
 

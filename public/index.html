@@ -33,7 +33,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);over
 .panel{position:fixed;left:max(16px, env(safe-area-inset-left,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));
   width:min(370px, calc(100% - 32px));box-sizing:border-box;background:var(--panel);
   -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;
-  padding:14px;display:grid;gap:12px}
+  padding:14px;display:grid;gap:12px;max-height:calc(100% - 120px);overflow-y:auto;overscroll-behavior:contain}
 .group-label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
 .views{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
@@ -89,6 +89,14 @@ body.touring .panel, body.touring .title{display:none}
 .hot{position:fixed;transform:translate(-50%,-50%);z-index:3;background:var(--panel);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
   border:1px solid rgba(244,236,220,.4);border-radius:999px;padding:7px 13px;font-size:13px;white-space:nowrap}
 .hot::before{content:"↑ ";color:var(--accent)}
+
+.css3d{position:fixed;inset:0;z-index:-1;pointer-events:none}
+.screen-el{width:1280px;height:720px;background:#000;backface-visibility:hidden}
+.screen-el iframe{display:block;width:1280px;height:720px;border:0}
+#screenForm{display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:6px}
+#screenForm input{min-width:0;font:13px var(--body);color:var(--ink);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.screen-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
+.screen-row button{font-size:12px;padding:8px 4px}
 .gal-nav{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 @media (max-width:520px){ .title{max-width:calc(100% - 150px)} .gallery img{max-height:32vh} }
 </style>
@@ -137,6 +145,11 @@ body.touring .panel, body.touring .title{display:none}
     </div>
     <p class="me-line">내 이름 <b id="myName"></b></p>
   </div>
+  <div>
+    <p class="group-label">대형 화면</p>
+    <form id="screenForm"><input id="screenUrl" type="url" inputmode="url" placeholder="유튜브 링크 붙여넣기" aria-label="유튜브 링크"><button type="submit">틀기</button></form>
+    <div class="screen-row"><button id="screenGo" type="button">보러 가기</button><button id="muteBtn" type="button">소리 켜기</button><button id="screenDefault" type="button">기본 영상</button></div>
+  </div>
   <p class="hint" id="hint">드래그로 회전 · 휠/핀치로 확대 · 탑을 가리키면 이름이 나옵니다. 비율과 장식은 단순화한 모형입니다.</p>
 </nav>
 <aside class="gallery" aria-label="실사 사진">
@@ -158,6 +171,7 @@ body.touring .panel, body.touring .title{display:none}
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/objects/Sky.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/renderers/CSS3DRenderer.js"></script>
 <script>
 (() => {
 THREE.ColorManagement.legacyMode = false;
@@ -171,7 +185,7 @@ const rr = (a, b) => a + (b - a) * rand();
 
 // ---------- renderer / scene ----------
 const canvas = document.getElementById('c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(innerWidth, innerHeight, false);
 renderer.outputEncoding = THREE.sRGBEncoding;
@@ -830,7 +844,7 @@ function doPick() {
   tip.style.left = Math.min(x + 16, innerWidth - w - 12) + 'px'; tip.style.top = Math.max(12, Math.min(y + 16, innerHeight - h - 12)) + 'px';
 }
 
-addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight, false); });
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight, false); if (window.__css) __css.setSize(innerWidth, innerHeight); });
 
 // ---------- pilgrims: walk together (room capability) ----------
 const ADJ = ['고요한', '느린', '따뜻한', '작은', '푸른', '먼', '맑은', '조용한', '긴', '오래된'];
@@ -1005,6 +1019,7 @@ function createWsRoom() {
         for (const p of m.peers || []) others.set(p.id, { p: Object.freeze(p.p || {}), at: Date.now() });
         rebuild(); fire(L.conn, true);
         for (const c of m.candles || []) fire(L.topics.candle || [], { topic: 'candle', data: c, peer: '', isMe: false, sameTab: false, kind: 'viewer' });
+        if (m.screen) fire(L.topics.screen || [], { topic: 'screen', data: m.screen, peer: '', isMe: false, sameTab: false, kind: 'viewer', welcome: true });
       } else if (m.type === 'presence' && m.id !== myId) { others.set(m.id, { p: Object.freeze(m.p || {}), at: Date.now() }); rebuild(); }
       else if (m.type === 'leave') { others.delete(m.id); rebuild(); }
       else if (m.type === 'event') fire(L.topics[m.topic] || [], { topic: m.topic, data: m.data, peer: m.id, isMe: m.id === myId, sameTab: m.id === myId, kind: 'viewer' });
@@ -1214,6 +1229,66 @@ function updateTour(now) {
 }
 window.__tourReady = true; refreshTourUI();
 
+
+// ---------- big screen hanging over the crossing (YouTube, shared per channel) ----------
+const DEFAULT_VIDEO = 'Za3A_9Plm5A';
+const SCREEN = { w: 16, h: 9, pos: new THREE.Vector3(0, 25, -8.2) };
+const cssRenderer = new THREE.CSS3DRenderer();
+cssRenderer.setSize(innerWidth, innerHeight); cssRenderer.domElement.className = 'css3d'; document.body.prepend(cssRenderer.domElement); window.__css = cssRenderer;
+const cssScene = new THREE.Scene();
+const screenEl = document.createElement('div'); screenEl.className = 'screen-el';
+const frame = document.createElement('iframe');
+Object.assign(frame, { width: 1280, height: 720, title: '대형 화면', allow: 'autoplay; encrypted-media; picture-in-picture' });
+screenEl.appendChild(frame);
+const screenObj = new THREE.CSS3DObject(screenEl); screenObj.position.copy(SCREEN.pos); screenObj.scale.setScalar(SCREEN.w / 1280); cssScene.add(screenObj);
+// The video sits behind the WebGL canvas; this plane punches a see-through hole so columns in front still hide it.
+const screenHoleMat = new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, blending: THREE.NoBlending });
+const posterTex = texLoader.load('/photos/nave.webp', t => { t.encoding = THREE.sRGBEncoding; });
+const posterMat = new THREE.MeshBasicMaterial({ map: posterTex, color: '#9a9590', toneMapped: false });
+const screenFace = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN.w, SCREEN.h), posterMat); screenFace.position.copy(SCREEN.pos); scene.add(screenFace);
+const bezel = new THREE.Mesh(new THREE.BoxGeometry(SCREEN.w + .8, SCREEN.h + .8, .4), new THREE.MeshStandardMaterial({ color: '#15120f', roughness: .4, metalness: .3 }));
+bezel.position.copy(SCREEN.pos).add(new THREE.Vector3(0, 0, -.22)); scene.add(bezel);
+const cableMat = new THREE.MeshBasicMaterial({ color: '#2a2622' });
+for (const x of [-6, 6]) scene.add(rod(new THREE.Vector3(x, SCREEN.pos.y + SCREEN.h / 2 + .4, SCREEN.pos.z - .2), new THREE.Vector3(x, 44.9, SCREEN.pos.z - .2), .05, .05, cableMat, 4));
+
+let screenVideo = DEFAULT_VIDEO, screenLive = false, screenMuted = true;
+const embedUrl = (v) => `https://www.youtube-nocookie.com/embed/${v}?autoplay=1&mute=1&loop=1&playlist=${v}&controls=0&rel=0&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(location.origin)}`;
+function setScreenLive(on) {
+  if (on === screenLive) return; screenLive = on;
+  frame.src = on ? embedUrl(screenVideo) : 'about:blank';
+  screenFace.material = on ? screenHoleMat : posterMat;
+  if (!on) { screenMuted = true; muteBtn.textContent = '소리 켜기'; }
+}
+function playVideo(v) {
+  if (!/^[A-Za-z0-9_-]{11}$/.test(v) || v === screenVideo) return;
+  screenVideo = v; if (screenLive) { frame.src = embedUrl(v); screenMuted = true; muteBtn.textContent = '소리 켜기'; }
+}
+const parseYouTube = (s) => { const m = String(s).trim().match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([A-Za-z0-9_-]{11})/) || String(s).trim().match(/^([A-Za-z0-9_-]{11})$/); return m ? m[1] : null; };
+const screenForm = document.getElementById('screenForm'), screenUrl = document.getElementById('screenUrl'), muteBtn = document.getElementById('muteBtn');
+screenForm.addEventListener('submit', e => {
+  e.preventDefault(); const v = parseYouTube(screenUrl.value);
+  if (!v) { toast('유튜브 링크를 확인해 주세요'); return; }
+  screenUrl.value = '';
+  if (room && room.connected()) { room.emit('screen', { v }); toast('대형 화면에 틀었어요. 같은 채널 모두에게 보여요'); }
+  else { playVideo(v); toast('대형 화면에 틀었어요'); }
+});
+document.getElementById('screenDefault').addEventListener('click', () => { if (room && room.connected()) room.emit('screen', { v: DEFAULT_VIDEO }); else playVideo(DEFAULT_VIDEO); });
+document.getElementById('screenGo').addEventListener('click', () => { if (tourOn) exitTour(); if (walking) stopWalk(); setView('interior'); });
+muteBtn.addEventListener('click', () => {
+  if (!screenLive) { toast('성당 안에 들어가면 화면이 켜져요'); return; }
+  screenMuted = !screenMuted;
+  frame.contentWindow && frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: screenMuted ? 'mute' : 'unMute', args: [] }), '*');
+  if (!screenMuted) frame.contentWindow && frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [80] }), '*');
+  muteBtn.textContent = screenMuted ? '소리 켜기' : '소리 끄기';
+});
+if (room) room.on('screen', msg => { const v = msg.data && msg.data.v; if (typeof v === 'string' && v !== screenVideo) { playVideo(v); if (!msg.isMe && !msg.welcome) toast('대형 화면 영상이 바뀌었어요'); } });
+let screenCheckAt = 0;
+function updateScreen(now) {
+  if (now - screenCheckAt < 500) return; screenCheckAt = now;
+  const p = walking ? myPos : camera.position;
+  setScreenLive(!tourOn && insideAt(p.x, p.z) && p.distanceTo(SCREEN.pos) < 90 || (!tourOn && currentView === 'interior'));
+}
+
 // ---------- loop ----------
 applyTime(timeEl.value / 100); setPhase('now');
 const clock = new THREE.Clock();
@@ -1221,10 +1296,10 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.min(clock.getDelta(), .05);
   if (tween) { const k = Math.min(1, (now - tween.s) / tween.d), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
     camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e); if (k >= 1) tween = null; }
-  if (tourOn) { updateTour(now); controls.update(); renderer.render(panoScene, camera); return; }
+  if (tourOn) { updateTour(now); updateScreen(now); controls.update(); renderer.render(panoScene, camera); return; }
   updateWalk(dt, now); updatePeers(dt, now); updateCandles(now);
   controls.update(); if (walking && camera.position.y < .4) camera.position.y = .4;
-  doPick(); renderer.render(scene, camera);
+  doPick(); updateScreen(now); renderer.render(scene, camera); if (screenLive) cssRenderer.render(cssScene, camera);
 });
 })();
 </script>
