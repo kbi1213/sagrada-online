@@ -13,7 +13,8 @@ const MAX_CHANNELS = Number(process.env.MAX_CHANNELS) || 100;
 const CANDLE_TTL_MS = 10 * 60 * 1000;
 const CANDLES_PER_CHANNEL = 200;
 const INDEX = path.join(__dirname, 'public', 'index.html');
-const STATIC_RE = /^\/(textures|photos)\/[a-z0-9_-]+\.(jpg|png|webp)$/;
+const STATIC_RE = /^\/(textures|photos|panos)\/[a-z0-9_-]+\.(jpg|png|webp)$/;
+const SPOTS = new Set(['nativity', 'passion', 'glory', 'nave', 'crossing', 'altar']); // 360° tour spots
 const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
 
 // ---------- http ----------
@@ -61,6 +62,7 @@ function cleanPresence(p) {
       case 'x': case 'z': { const n = num(v, -200, 200); if (n !== undefined) out[k] = Math.round(n * 100) / 100; break; }
       case 'r': { const n = num(v, -10, 10); if (n !== undefined) out.r = Math.round(n * 100) / 100; break; }
       case 'a': if (v === 'bow') out.a = 'bow'; break;
+      case 's': if (SPOTS.has(v)) out.s = v; break;
       case 't': { const n = num(v, 0, 1e14); if (n !== undefined) out.t = n; break; }
     }
   }

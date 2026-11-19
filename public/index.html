@@ -75,6 +75,20 @@ button:disabled{opacity:.4;cursor:default}
 .gallery img{display:block;width:100%;max-height:46vh;object-fit:cover;border-radius:8px;background:#0d0a07}
 .gallery figcaption{display:grid;gap:2px;font-size:13px}
 .gallery figcaption small{font-size:11px;color:var(--muted)}
+
+.tour-btn{width:100%;margin-top:6px;background:rgba(233,168,76,.14);border-color:rgba(233,168,76,.55)}
+body.touring .panel, body.touring .title{display:none}
+#tourBar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:5;
+  width:min(720px, calc(100% - 32px));box-sizing:border-box;background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:grid;gap:10px}
+.tour-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.tour-head b{font-family:var(--display);font-size:18px}
+.tour-head span{font-size:12px;color:var(--muted)}
+#tourChips{display:flex;flex-wrap:wrap;gap:6px}
+#tourChips button{padding:7px 10px;font-size:12px}
+.hot{position:fixed;transform:translate(-50%,-50%);z-index:3;background:var(--panel);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  border:1px solid rgba(244,236,220,.4);border-radius:999px;padding:7px 13px;font-size:13px;white-space:nowrap}
+.hot::before{content:"↑ ";color:var(--accent)}
 .gal-nav{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 @media (max-width:520px){ .title{max-width:calc(100% - 150px)} .gallery img{max-height:32vh} }
 </style>
@@ -100,6 +114,7 @@ button:disabled{opacity:.4;cursor:default}
       <button id="v-passion" data-view="passion" aria-pressed="false">수난 파사드</button>
       <button id="v-interior" data-view="interior" aria-pressed="false">내부</button>
     </div>
+    <button id="tourBtn" class="tour-btn">실사 360° 투어</button>
   </div>
   <div>
     <div class="time-head"><p class="group-label">시간</p><output id="timeLabel" for="time">석양</output></div>
@@ -132,6 +147,12 @@ button:disabled{opacity:.4;cursor:default}
     <div class="gal-nav"><button id="galPrev">이전</button><span id="galIdx"></span><button id="galNext">다음</button></div>
   </figure>
 </aside>
+<div id="hotspots"></div>
+<div id="tourBar" hidden>
+  <div class="tour-head"><div><b id="tourName"></b><br><span>드래그로 둘러보기 · 휠로 확대 · 표지를 눌러 이동 · Higgsfield AI 실사 360°</span></div>
+    <button id="tourExit">3D로 돌아가기</button></div>
+  <div id="tourChips" role="group" aria-label="장소"></div>
+</div>
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
@@ -774,6 +795,7 @@ function setInside(v) {
   applyInterior();
 }
 function setView(key) {
+  if (tourOn) exitTour();
   const v = VIEWS[key]; currentView = key; syncGallery(key);
   if (walking) stopWalk();
   inside = !(key === 'interior'); setInside(key === 'interior');
@@ -918,6 +940,7 @@ const safeColor = c => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) ? c 
 const safeName = n => String(typeof n === 'string' ? n : '순례자').replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯]/g, '').slice(0, 16) || '순례자';
 const statusEl = document.getElementById('roomStatus');
 function renderStatus() {
+  if (window.__tourReady) refreshTourUI();
   if (!room) { statusEl.textContent = '혼자 보는 중'; statusEl.dataset.live = '0'; return; }
   const ps = room.peers(), walkers = ps.filter(p => p.presence && p.presence.w === 1).length;
   statusEl.dataset.live = room.connected() ? '1' : '0';
@@ -1088,6 +1111,109 @@ galToggle.addEventListener('click', () => {
 document.getElementById('galPrev').addEventListener('click', () => showPhoto(galAt - 1));
 document.getElementById('galNext').addEventListener('click', () => showPhoto(galAt + 1));
 
+
+// ---------- photoreal 360° tour: Higgsfield panoramas placed at real spots of the model ----------
+const SPOTS = [
+  { id: 'nativity', name: '탄생의 파사드 앞', x: 80, z: -2, f: [-1, 0] },
+  { id: 'passion', name: '수난의 파사드 앞', x: -80, z: -2, f: [1, 0] },
+  { id: 'glory', name: '영광의 파사드 앞', x: 0, z: 95, f: [0, -1] },
+  { id: 'nave', name: '신랑 중앙', x: 0, z: 25, f: [0, -1] },
+  { id: 'crossing', name: '교차부', x: 0, z: -2, f: [0, -1] },
+  { id: 'altar', name: '제단 앞', x: 0, z: -24, f: [0, -1] },
+];
+const VIEW_SPOT = { overview: 'glory', nativity: 'nativity', passion: 'passion', interior: 'nave' };
+const panoScene = new THREE.Scene();
+const panoGeo = new THREE.SphereGeometry(500, 96, 48); panoGeo.scale(-1, 1, 1);
+const mkPano = () => { const m = new THREE.Mesh(panoGeo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, toneMapped: false, depthWrite: false })); panoScene.add(m); return m; };
+let panoFront = mkPano(), panoBack = mkPano();
+const panoTex = {};
+let tourOn = false, tourSpot = null, fade = null, savedCam = null;
+const hotLayer = document.getElementById('hotspots'), tourBar = document.getElementById('tourBar'), tourName = document.getElementById('tourName'), tourChips = document.getElementById('tourChips');
+const tourBtn = document.getElementById('tourBtn');
+function loadPano(id) {
+  if (!panoTex[id]) panoTex[id] = new Promise(res => texLoader.load(`/panos/${id}.jpg`, t => { t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso; res(t); }, undefined, () => { delete panoTex[id]; res(null); }));
+  return panoTex[id];
+}
+const peopleAt = (id) => room ? room.peers().filter(p => p.presence && p.presence.s === id).length : 0;
+function refreshTourUI() {
+  tourChips.replaceChildren(...SPOTS.map(s => {
+    const b = document.createElement('button'); const n = peopleAt(s.id);
+    b.textContent = n ? `${s.name} · ${n}명` : s.name; b.setAttribute('aria-pressed', String(tourSpot && tourSpot.id === s.id));
+    b.addEventListener('click', () => goSpot(s.id)); return b;
+  }));
+  hotLayer.replaceChildren(...(tourOn && tourSpot ? SPOTS.filter(s => s.id !== tourSpot.id).map(s => {
+    const b = document.createElement('button'); b.className = 'hot'; const n = peopleAt(s.id);
+    b.textContent = n ? `${s.name} · ${n}명` : s.name; b.dataset.spot = s.id; b.addEventListener('click', () => goSpot(s.id)); return b;
+  }) : []));
+}
+async function goSpot(id) {
+  const s = SPOTS.find(p => p.id === id); if (!s || (tourSpot && tourSpot.id === id && !fade)) return;
+  toast(`${s.name} 사진을 불러오는 중`);
+  const t = await loadPano(id);
+  if (!t) { toast('이 장소의 사진을 불러오지 못했어요'); return; }
+  if (!tourOn) return;
+  toastEl.hidden = true;
+  tourSpot = s; tourName.textContent = s.name;
+  panoBack.material.map = t; panoBack.material.needsUpdate = true;
+  panoBack.rotation.y = Math.atan2(s.f[1], -s.f[0]);
+  fade = { s: performance.now(), d: reduceMotion ? 1 : 700, from: panoFront, to: panoBack };
+  [panoFront, panoBack] = [panoBack, panoFront];
+  camera.position.set(-s.f[0] * .1, -.012, -s.f[1] * .1); controls.target.set(0, 0, 0);
+  if (room) room.presence({ s: id }).catch(() => {});
+  refreshTourUI();
+}
+function enterTour(id) {
+  if (tourOn) { goSpot(id); return; }
+  if (walking) stopWalk();
+  tween = null; tourOn = true; tip.hidden = true;
+  savedCam = { p: camera.position.clone(), t: controls.target.clone(), fov: camera.fov, min: controls.minDistance, max: controls.maxDistance, minP: controls.minPolarAngle, maxP: controls.maxPolarAngle };
+  Object.assign(controls, { minDistance: .1, maxDistance: .1, enableZoom: false, enablePan: false, rotateSpeed: -.35, minPolarAngle: .12, maxPolarAngle: Math.PI - .12 });
+  camera.fov = 75; camera.updateProjectionMatrix();
+  document.body.classList.add('touring'); tourBar.hidden = false;
+  goSpot(id);
+}
+function exitTour() {
+  if (!tourOn) return;
+  tourOn = false; tourSpot = null; fade = null;
+  panoFront.material.opacity = panoBack.material.opacity = 0;
+  Object.assign(controls, { minDistance: savedCam.min, maxDistance: savedCam.max, enableZoom: true, enablePan: true, rotateSpeed: 1, minPolarAngle: savedCam.minP, maxPolarAngle: savedCam.maxP });
+  camera.position.copy(savedCam.p); controls.target.copy(savedCam.t); camera.fov = savedCam.fov; camera.updateProjectionMatrix();
+  document.body.classList.remove('touring'); tourBar.hidden = true; hotLayer.replaceChildren();
+  if (room) room.presence({ s: null }).catch(() => {});
+}
+tourBtn.addEventListener('click', () => enterTour(VIEW_SPOT[currentView] || 'nativity'));
+document.getElementById('tourExit').addEventListener('click', exitTour);
+canvas.addEventListener('wheel', e => {
+  if (!tourOn) return; e.preventDefault();
+  camera.fov = THREE.MathUtils.clamp(camera.fov + e.deltaY * .03, 30, 95); camera.updateProjectionMatrix();
+}, { passive: false });
+addEventListener('keydown', e => { if (tourOn && e.key === 'Escape') exitTour(); });
+const hotV = new THREE.Vector3();
+function updateTour(now) {
+  if (fade) {
+    const k = Math.min(1, (now - fade.s) / fade.d);
+    fade.to.material.opacity = k; fade.from.material.opacity = 1 - k;
+    if (k >= 1) fade = null;
+  }
+  if (!tourSpot) return;
+  for (const el of hotLayer.children) {
+    const s = SPOTS.find(p => p.id === el.dataset.spot); const dx = s.x - tourSpot.x, dz = s.z - tourSpot.z, d = Math.hypot(dx, dz);
+    hotV.set(dx / d * 40, -1.6 / d * 40 - 2, dz / d * 40).project(camera);
+    const vis = hotV.z < 1 && Math.abs(hotV.x) < 1.05 && Math.abs(hotV.y) < 1.05;
+    el.style.display = vis ? '' : 'none';
+    if (vis) { el._x = (hotV.x + 1) / 2 * innerWidth; el._y = (1 - hotV.y) / 2 * innerHeight; }
+  }
+  // keep labels that point the same way from sitting on top of each other
+  const shown = [...hotLayer.children].filter(el => el.style.display !== 'none').sort((a, b) => a._x - b._x);
+  const placed = [];
+  for (const el of shown) {
+    let y = el._y;
+    while (placed.some(p => Math.abs(p.x - el._x) < 150 && Math.abs(p.y - y) < 34)) y += 36;
+    placed.push({ x: el._x, y }); el.style.left = el._x + 'px'; el.style.top = y + 'px';
+  }
+}
+window.__tourReady = true; refreshTourUI();
+
 // ---------- loop ----------
 applyTime(timeEl.value / 100); setPhase('now');
 const clock = new THREE.Clock();
@@ -1095,6 +1221,7 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.min(clock.getDelta(), .05);
   if (tween) { const k = Math.min(1, (now - tween.s) / tween.d), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
     camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e); if (k >= 1) tween = null; }
+  if (tourOn) { updateTour(now); controls.update(); renderer.render(panoScene, camera); return; }
   updateWalk(dt, now); updatePeers(dt, now); updateCandles(now);
   controls.update(); if (walking && camera.position.y < .4) camera.position.y = .4;
   doPick(); renderer.render(scene, camera);
