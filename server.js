@@ -13,6 +13,8 @@ const MAX_CHANNELS = Number(process.env.MAX_CHANNELS) || 100;
 const CANDLE_TTL_MS = 10 * 60 * 1000;
 const CANDLES_PER_CHANNEL = 200;
 const INDEX = path.join(__dirname, 'public', 'index.html');
+const STATIC_RE = /^\/(textures|photos)\/[a-z0-9_-]+\.(jpg|png|webp)$/;
+const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
 
 // ---------- http ----------
 const server = http.createServer((req, res) => {
@@ -21,6 +23,14 @@ const server = http.createServer((req, res) => {
     fs.readFile(INDEX, (err, body) => {
       if (err) { res.writeHead(500); res.end('index.html를 읽지 못했습니다'); return; }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
+      res.end(body);
+    });
+  } else if (STATIC_RE.test(pathname)) {
+    // textures and reference photos: fixed folders, plain file names only
+    const file = path.join(__dirname, 'public', pathname);
+    fs.readFile(file, (err, body) => {
+      if (err) { res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); res.end('not found'); return; }
+      res.writeHead(200, { 'content-type': MIME[path.extname(file)], 'cache-control': 'public, max-age=86400' });
       res.end(body);
     });
   } else if (pathname === '/healthz') {
