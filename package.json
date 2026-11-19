@@ -1,0 +1,16 @@
+{
+  "name": "sagrada-online",
+  "version": "1.0.0",
+  "private": true,
+  "description": "사그라다 파밀리아를 여러 명이 함께 걷는 3D 온라인 성당 (Three.js + WebSocket)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
