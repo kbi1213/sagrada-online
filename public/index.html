@@ -989,7 +989,7 @@ let timeArmed = true;
 let rideKind = 0, lastRide = 2, rideV = 0, rideSteer = 0, rideAcc = 0, launchT0 = null, launchShown = false;
 const joy = { on: false, x: 0, y: 0 }; let boostHeld = false, navTimer = 0;
 let atkReady = 0, spReady = 0, soundOn = true, actx = null, eng = null, shakeT = -1e9, shakeA = 0, spLabel = '';
-const WEAPONS = { 8: { f: 'w8', len: .95, grip: .1, both: true }, 9: { f: 'w9', len: 2.3, grip: .38 }, 10: { f: 'w10', len: 2.6, grip: .38 }, 11: { f: 'w11', len: 2.5, grip: .38 } };
+const WEAPONS = { 8: { f: 'w8', len: .95, grip: .1, both: true, hold: [1.05, .28] }, 9: { f: 'w9', len: 2.3, grip: .38 }, 10: { f: 'w10', len: 2.6, grip: .38 }, 11: { f: 'w11', len: 2.5, grip: .38 } };
 const charTex = {};
 function charTextures(k) {
   if (!charTex[k]) {
@@ -1094,11 +1094,14 @@ function holdWeapons(g) {
   g.updateMatrixWorld(true); g.getWorldQuaternion(_qg); _qg.invert();
   const canCalibrate = u.model3d && !u.mount && !u.atk && u.walkAction && u.walkAction.paused;
   for (const wp of ws) {
-    const bone = wp.userData.bone;
-    bone.getWorldPosition(_hw); _hp.copy(_hw); g.worldToLocal(_hp); wp.position.copy(_hp);
-    bone.getWorldQuaternion(_qh);
+    const bone = wp.userData.bone, fore = bone.parent;
+    // the shaft runs through the middle of the fist, ~8 cm past the wrist joint along the hand
+    bone.getWorldPosition(_hw); fore.getWorldPosition(_hp); _hp.subVectors(_hw, _hp).normalize().multiplyScalar(.085).add(_hw);
+    g.worldToLocal(_hp); wp.position.copy(_hp);
+    fore.getWorldQuaternion(_qh); // the forearm carries the grip: steadier than the hand bone, which the walk clip flaps
     if (!wp.userData.off && canCalibrate) {
-      _eu.set(.12, 0, wp.userData.side ? .1 : -.1); _qd.setFromEuler(_eu);           // upright, a little forward and out, in the body frame
+      const hold = (WEAPONS[wp.userData.k] || {}).hold || [.12, .1];
+      _eu.set(hold[0], 0, wp.userData.side ? hold[1] : -hold[1]); _qd.setFromEuler(_eu); // pole upright / blade forward, slightly out, in the body frame
       u.body.getWorldQuaternion(_q3); _qd.premultiply(_q3);                         // -> world
       wp.userData.off = _qh.clone().invert().multiply(_qd);                         // hand^-1 * desired
     }
@@ -2290,31 +2293,48 @@ function rollWheels(v, speed, dt, dyaw) {
 }
 // horse legs: everything below the belly, split into four by side and front/back, each hinged at the shoulder or hip
 function splitLegs(obj, wrap, h) {
+  // Each leg is cut below the belly and again at the knee (front) / hock (hind): an upper piece hinged at the shoulder or hip,
+  // and a lower piece (cannon + hoof) hinged at the joint and parented to the upper one, so the leg can fold while it swings.
   wrap.updateMatrixWorld(true);
-  const inv = new THREE.Matrix4().copy(wrap.matrixWorld).invert(), v = new THREE.Vector3(), cut = h * .44;
+  const inv = new THREE.Matrix4().copy(wrap.matrixWorld).invert(), v = new THREE.Vector3(), cut = h * .44, knee = h * .25;
   const GET = [THREE.BufferAttribute.prototype.getX, THREE.BufferAttribute.prototype.getY, THREE.BufferAttribute.prototype.getZ, THREE.BufferAttribute.prototype.getW];
   const meshes = []; obj.traverse(o => { if (o.isMesh && o.geometry.index) meshes.push(o); });
   const loc = meshes.map(m => { const M = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld), pa = m.geometry.attributes.position, P = new Float32Array(pa.count * 3);
     for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(M); P.set([v.x, v.y, v.z], i * 3); } return { m, M, P }; });
-  let zs = 0, zn = 0; for (const { P } of loc) for (let i = 0; i < P.length; i += 3) if (P[i + 1] < cut * .6) { zs += P[i + 2]; zn++; }
-  if (!zn) return; const zc = zs / zn;
-  let zmin = Infinity, zmax = -Infinity; for (const { P } of loc) for (let i = 2; i < P.length; i += 3) { zmin = Math.min(zmin, P[i]); zmax = Math.max(zmax, P[i]); }
-  const tailZ = zmin + (zmax - zmin) * .14; // the tail hangs behind the hind legs: keep it on the body
-  const legOf = (x, y, z) => (y >= cut || z < tailZ || Math.abs(x) < .06 || Math.abs(x) > .27) ? -1 : (z > zc ? 2 : 0) + (x > 0 ? 1 : 0); // 0 LH 1 RH... (rear 0/1, front 2/3)
-  const acc = [0, 1, 2, 3].map(() => ({ x: 0, z: 0, n: 0 }));
-  for (const { P } of loc) for (let i = 0; i < P.length; i += 3) { const id = legOf(P[i], P[i + 1], P[i + 2]); if (id >= 0) { acc[id].x += P[i]; acc[id].z += P[i + 2]; acc[id].n++; } }
-  const piv = acc.map(a => a.n ? new THREE.Vector3(a.x / a.n, cut + h * .05, a.z / a.n) : null);
+  let zs = 0, zn = 0, zmin = Infinity, zmax = -Infinity;
+  for (const { P } of loc) for (let i = 0; i < P.length; i += 3) { zmin = Math.min(zmin, P[i + 2]); zmax = Math.max(zmax, P[i + 2]); if (P[i + 1] < cut * .6) { zs += P[i + 2]; zn++; } }
+  if (!zn) return; const zc = zs / zn, tailZ = zmin + (zmax - zmin) * .1;
+  // segment id: leg*2 (+1 for the lower piece); legs 0/1 hind left/right, 2/3 fore left/right
+  const segOf = (x, y, z) => (y >= cut || (z < tailZ && Math.abs(x) < .13) || Math.abs(x) < .05 || Math.abs(x) > .3) ? -1 : (((z > zc ? 2 : 0) + (x > 0 ? 1 : 0)) * 2 + (y < knee ? 1 : 0));
+  const acc = Array.from({ length: 8 }, () => ({ x: 0, z: 0, n: 0 }));
+  for (const { P } of loc) for (let i = 0; i < P.length; i += 3) { const id = segOf(P[i], P[i + 1], P[i + 2]); if (id >= 0) { acc[id].x += P[i]; acc[id].z += P[i + 2]; acc[id].n++; } }
+  const piv = acc.map((a, id) => a.n ? new THREE.Vector3(a.x / a.n, id & 1 ? knee : cut + h * .05, a.z / a.n) : null);
   const nodes = {};
+  const nodeFor = (id) => {
+    if (nodes[id]) return nodes[id];
+    const pv = piv[id]; if (!pv) return null;
+    const node = new THREE.Group();
+    if (id & 1) { // lower piece: child of its upper piece, hinged at the joint
+      const up = nodeFor(id - 1); if (!up) return null;
+      node.position.copy(pv).sub(piv[id - 1]); node.userData.leg = id >> 1; node.userData.knee = true; up.add(node);
+    } else { node.position.copy(pv); node.userData.leg = id >> 1; wrap.add(node); }
+    return (nodes[id] = node);
+  };
   for (const { m, M, P } of loc) {
     const g0 = m.geometry, idx = g0.index.array, n = g0.attributes.position.count, lid = new Int8Array(n);
-    for (let i = 0; i < n; i++) lid[i] = legOf(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+    for (let i = 0; i < n; i++) lid[i] = segOf(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
     const body = [], lt = {};
-    for (let t = 0; t < idx.length; t += 3) { const a = lid[idx[t]], b = lid[idx[t + 1]], c = lid[idx[t + 2]];
-      if (a >= 0 && a === b && b === c) (lt[a] = lt[a] || []).push(idx[t], idx[t + 1], idx[t + 2]); else body.push(idx[t], idx[t + 1], idx[t + 2]); }
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = lid[idx[t]], b = lid[idx[t + 1]], c = lid[idx[t + 2]];
+      // a triangle straddling the knee goes with the upper piece of that leg, so the joint has no gap
+      if (a >= 0 && b >= 0 && c >= 0 && (a >> 1) === (b >> 1) && (b >> 1) === (c >> 1)) { const id = (a === b && b === c) ? a : (a & ~1);
+        (lt[id] = lt[id] || []).push(idx[t], idx[t + 1], idx[t + 2]); }
+      else body.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
     if (!Object.keys(lt).length) continue;
     const nm = new THREE.Matrix3().getNormalMatrix(M);
-    for (const id of Object.keys(lt)) {
-      const pv = piv[id]; if (!pv) continue;
+    for (const id of Object.keys(lt).map(Number)) {
+      const node = nodeFor(id), pv = piv[id]; if (!node) { body.push(...lt[id]); continue; }
       const tris = lt[id], remap = new Map(), keep = [];
       const ix = tris.map(o => { if (!remap.has(o)) { remap.set(o, keep.length); keep.push(o); } return remap.get(o); });
       const geo = new THREE.BufferGeometry();
@@ -2325,18 +2345,25 @@ function splitLegs(obj, wrap, h) {
       const pos = geo.attributes.position; for (let jj = 0; jj < pos.count; jj++) { v.fromBufferAttribute(pos, jj).applyMatrix4(M); pos.setXYZ(jj, v.x - pv.x, v.y - pv.y, v.z - pv.z); }
       if (geo.attributes.normal) { const nn = geo.attributes.normal; for (let jj = 0; jj < nn.count; jj++) { v.fromBufferAttribute(nn, jj).applyMatrix3(nm).normalize(); nn.setXYZ(jj, v.x, v.y, v.z); } }
       geo.setIndex(ix);
-      let node = nodes[id]; if (!node) { node = nodes[id] = new THREE.Group(); node.position.copy(pv); node.userData.leg = +id; wrap.add(node); }
       const lm = new THREE.Mesh(geo, m.material); lm.castShadow = true; node.add(lm);
     }
     g0.setIndex(body);
   }
 }
-// transverse gallop footfall order: left hind, right hind, left fore, right fore; a trot pairs diagonals at lower speed
+// transverse gallop footfall order: left hind, right hind, left fore, right fore; a trot pairs diagonals at lower speed.
+// While a leg swings forward it folds: the fore knee tucks the hoof back and up, the hind hock lifts it forward under the belly.
 function gallop(v, ph, f, sp) {
   const legs = v.userData.legs; if (!legs || !legs.length) return;
   const gal = sp > 7, offs = gal ? [0, .12, .5, .62] : [0, .5, .5, 0], amp = (gal ? .62 : .42) * f;
-  for (const n of legs) { const id = n.userData.leg, front = id >= 2, a = Math.sin(ph + offs[id] * Math.PI * 2);
-    n.rotation.x = (front ? -1 : 1) * a * amp + (front ? -.08 : .06) * f * Math.max(0, a); }
+  for (const n of legs) {
+    const id = n.userData.leg, front = id >= 2, q = ph + offs[id] * Math.PI * 2, a = Math.sin(q);
+    if (n.userData.knee) { // lower piece: fold during the forward swing (cos > 0 leads the swing by a quarter cycle)
+      const fold = Math.max(0, Math.cos(q)) * (gal ? 1.25 : .8) * f;
+      n.rotation.x = front ? fold : -fold * .75;
+      continue;
+    }
+    n.rotation.x = (front ? -1 : 1) * a * amp + (front ? -.08 : .06) * f * Math.max(0, a);
+  }
 }
 const REIN_GEO = new THREE.CylinderGeometry(.011, .011, 1, 5, 1, true).translate(0, .5, 0).rotateX(Math.PI / 2);
 const reinMat = new THREE.MeshStandardMaterial({ color: '#3a2414', roughness: .8 });
