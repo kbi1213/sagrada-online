@@ -629,6 +629,9 @@ scene.add(coolL, warmL, naveL);
 
 // ---------- ground & Eixample city ----------
 const PITCH = 133.3, S = 113.3, CH = 15;
+// the sky route rises out of the west park: tower top garden at 420 m, floating temple at 650 m, the white room is a pocket space
+const SKY = { x: -PITCH, z: 0, top: 420, temple: 650, room: 1600, rTop: 14, rTemple: 42, door: { x: -PITCH + 27, z: 0 } };
+let inChamber = false;
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(5000, 5000), asphaltMat);
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 function octShape(s, c) { const h = s / 2, sh = new THREE.Shape();
@@ -648,6 +651,7 @@ pond.scale.set(22, 1, 34); pond.position.set(PITCH - 6, .12, -2); scene.add(pond
   let n = 0, guard = 0;
   while (n < 150 && guard++ < 5000) {
     const side = n % 2 ? 1 : -1, x = side * PITCH + rr(-50, 50), z = rr(-50, 50);
+    if (Math.hypot(x - SKY.x, z - SKY.z) < 16) continue;
     if (side > 0 && ((x - (PITCH - 6)) / 26) ** 2 + ((z + 2) / 38) ** 2 < 1) continue;
     if (Math.abs(Math.abs(x) - PITCH) + Math.abs(z) > 85) continue;
     const r = rand(); spots[r < .55 ? 'pine' : r < .8 ? 'cypress' : 'plane'].push([x, z, rr(.8, 1.2), rr(0, Math.PI)]); n++;
@@ -1187,9 +1191,9 @@ const RIDES = {
   3: { f: 'amg', wheelR: 0.39, name: '메르세데스-AMG GT SUV (전기)', len: 5.1, vmax: 50, boost: 62, acc: 11.6, brake: 16, rev: 4, vrev: 7, turn: 1.45, rider: false, yaw: Math.PI, gears: 1, ev: true },
   4: { f: 'dmc', wheelR: 0.32, name: '시간여행 걸윙카', len: 4.27, vmax: 36, boost: 48, acc: 6.4, brake: 13, rev: 4, vrev: 7, turn: 1.6, rider: false, yaw: 0, gears: 5, timeJump: true },
   6: { f: 'racer', wheelR: .36, name: 'AI 포뮬러 2040', open: true, seatX: 0, seatY: .42, ai: true, len: 5.4, vmax: 62, boost: 86, acc: 15, brake: 24, rev: 4, vrev: 6, turn: 1.55, rider: false, yaw: 0, gears: 8 },
-  7: { f: 'dragon', name: '용', len: 7.5, vmax: 24, boost: 50, acc: 7, brake: 9, rev: 1.2, vrev: 1.2, turn: 1.7, rider: true, dragon: true, fly: true, yaw: 0, gears: 0, seatH: .5, seatZ: .12 },
+  7: { f: 'dragon', name: '용', len: 7.5, vmax: 24, boost: 50, acc: 7, brake: 9, rev: 1.2, vrev: 1.2, turn: 1.7, rider: true, dragon: true, fly: true, altMax: 720, yaw: 0, gears: 0, seatH: .5, seatZ: .12 },
   8: { f: 'ship', name: '우주선 오로라', len: 7, vmax: 45, boost: 140, acc: 16, brake: 20, rev: 3, vrev: 5, turn: 1.5, rider: true, ship: true, fly: true, climb: 30, altMax: 2500, yaw: 0, gears: 0, seatH: .42, seatZ: .1 },
-  9: { f: 'beast', name: '푸른 빛날개', len: 7, vmax: 26, boost: 60, acc: 8, brake: 10, rev: 1.2, vrev: 1.2, turn: 1.9, rider: true, dragon: true, fly: true, climb: 14, altMax: 400, yaw: 0, gears: 0, seatH: .62, seatZ: .16, wing: { y0: .55, x0: .1, z0: -.7, z1: .5 } },
+  9: { f: 'beast', name: '푸른 빛날개', len: 7, vmax: 26, boost: 60, acc: 8, brake: 10, rev: 1.2, vrev: 1.2, turn: 1.9, rider: true, dragon: true, fly: true, climb: 14, altMax: 720, yaw: 0, gears: 0, seatH: .62, seatZ: .16, wing: { y0: .55, x0: .1, z0: -.7, z1: .5 } },
   10: { f: 'robot', name: '슈퍼 로봇 가디언', height: 12, upright: true, len: 6, vmax: 9, boost: 70, acc: 5, brake: 9, rev: 2, vrev: 3, turn: 1.3, rider: true, robot: true, fly: true, climb: 20, altMax: 900, yaw: 0, gears: 0, seatH: .9, seatZ: 0 },
   12: { f: 'mech', name: '스카이 레인저', height: 14, upright: true, len: 5, vmax: 12, boost: 90, acc: 7, brake: 10, rev: 2, vrev: 3, turn: 1.5, rider: true, robot: true, fly: true, climb: 26, altMax: 1200, yaw: 0, gears: 0, seatH: .7, seatZ: .1, backJets: .62 },
   13: { f: 'giant', name: '강철 거인 브론즈', height: 13, upright: true, len: 6, vmax: 8, boost: 60, acc: 4, brake: 8, rev: 2, vrev: 3, turn: 1.2, rider: true, robot: true, fly: true, climb: 16, altMax: 700, yaw: 0, gears: 0, seatH: .86, seatZ: 0, seatX: .3, backJets: .55, noBoots: true },
@@ -1347,6 +1351,7 @@ const BOUNDS = { x0: -890, x1: 890, z0: -890, z1: 890 }; // the whole Eixample g
 const clampX = x => Math.min(BOUNDS.x1, Math.max(BOUNDS.x0, x)), clampZ = z => Math.min(BOUNDS.z1, Math.max(BOUNDS.z0, z));
 // city blocks are solid: chamfered squares of side S every PITCH metres (the basilica block and the two parks are open)
 function blockedAt(x, z, pad = .7) {
+  if (Math.hypot(x - SKY.x, z - SKY.z) < 8.5 + pad) return true;
   const i = Math.round(x / PITCH), j = Math.round(z / PITCH);
   if (Math.abs(i) > 6 || Math.abs(j) > 6 || (j === 0 && Math.abs(i) <= 1)) return false;
   const dx = Math.abs(x - i * PITCH), dz = Math.abs(z - j * PITCH), h = S / 2 + pad;
@@ -1521,7 +1526,7 @@ function updatePeers(dt, now) {
   const a = 1 - Math.exp(-dt * 8);
   for (const v of peerViews.values()) {
     const g = v.g, dx = v.tx - g.position.x, dz = v.tz - g.position.z, moving = Math.hypot(dx, dz) > .05;
-    g.visible = !tourOn || (!!tourSpot && v.s === tourSpot.id); // inside a photo, show only people standing in the same photo
+    g.visible = (!tourOn || (!!tourSpot && v.s === tourSpot.id)) && ((v.ty || 0) > SKY.room - 60) === inChamber; // inside a photo, show only people standing in the same photo
     g.position.x += dx * a; g.position.z += dz * a; g.position.y += ((v.ty || 0) - g.position.y) * a;
     let dr = v.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * a;
     g.userData.body.position.y = moving && !g.userData.model3d ? Math.abs(Math.sin(now / 140)) * .08 : 0;
@@ -2408,6 +2413,179 @@ function engineUpdate(R, v, thr) {
 }
 
 // ---------- my controls ----------
+
+// ---- the sky route (original designs): 구름기둥 탑 → 선인 정원 (420 m) → 빛의 사다리 → 천공 신전 (650 m) → 무한 백색의 방 ----
+const skyGrp = new THREE.Group(), roomGrp = new THREE.Group(); scene.add(skyGrp, roomGrp); roomGrp.visible = false;
+const skyFx = { clouds: [], ladder: [], lamps: [] };
+function skySign(text, w = 7, h = 1.3) {
+  const c = document.createElement('canvas'); c.width = 640; c.height = 120; const x = c.getContext('2d');
+  x.fillStyle = '#1f4f45'; x.fillRect(0, 0, 640, 120); x.strokeStyle = '#e2b453'; x.lineWidth = 8; x.strokeRect(6, 6, 628, 108);
+  x.fillStyle = '#ffd77a'; x.font = 'bold 60px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 320, 64);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide }));
+}
+{
+  const X = SKY.x, Z = SKY.z, T = SKY.top, H = SKY.temple;
+  const stone = new THREE.MeshStandardMaterial({ color: '#ece2cf', roughness: .8 });
+  const gold = new THREE.MeshStandardMaterial({ color: '#d9a640', roughness: .35, metalness: .8 });
+  const jade = new THREE.MeshStandardMaterial({ color: '#2f9c80', roughness: .45, metalness: .15 });
+  const rock = new THREE.MeshStandardMaterial({ color: '#7d6b58', roughness: 1, flatShading: true });
+  const marble = new THREE.MeshStandardMaterial({ color: '#f7f4ee', roughness: .35 });
+  const leaf = new THREE.MeshStandardMaterial({ color: '#5fae55', roughness: .9, flatShading: true });
+  const dark = new THREE.MeshBasicMaterial({ color: '#0b0d12' });
+  const add = (geo, mat, x, y, z, grp = skyGrp, sh = false) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = sh; m.receiveShadow = true; grp.add(m); return m; };
+  skyGrp.position.set(X, 0, Z);
+  // plinth with steps and a glowing ring
+  add(new THREE.CylinderGeometry(8.5, 9.5, 1.2, 40), stone, 0, .6, 0, skyGrp, true);
+  add(new THREE.CylinderGeometry(7, 7.5, 1.4, 40), stone, 0, 1.9, 0, skyGrp, true);
+  add(new THREE.TorusGeometry(9.6, .18, 8, 80).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#8fe6ff' }), 0, 1.25, 0);
+  // the shaft: slender, tapering, a gold spiral winding all the way up and a gold band every 28 m
+  const rAt = y => 4.4 - 1.2 * y / T;
+  add(new THREE.CylinderGeometry(rAt(T), rAt(0), T, 24, 1), stone, 0, T / 2, 0, skyGrp, true);
+  const pts = []; for (let i = 0; i <= 600; i++) { const t = i / 600, y = 2.6 + t * (T - 3), a = t * Math.PI * 2 * 16; pts.push(new THREE.Vector3(Math.cos(a) * (rAt(y) + .08), y, Math.sin(a) * (rAt(y) + .08))); }
+  add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), LOW ? 700 : 1600, .2, 6), gold, 0, 0, 0);
+  const bands = new THREE.InstancedMesh(new THREE.TorusGeometry(1, .09, 8, 40).rotateX(Math.PI / 2), gold, 14), m4 = new THREE.Matrix4();
+  for (let i = 0; i < 14; i++) { const y = 30 + i * 28, r = rAt(y) + .1; m4.makeScale(r, r, r).setPosition(0, y, 0); bands.setMatrixAt(i, m4); }
+  skyGrp.add(bands);
+  // 선인 정원: a lotus-bowl terrace at the top with a small hexagonal pavilion
+  add(new THREE.CylinderGeometry(SKY.rTop, 5, 6, 40), stone, 0, T - 3, 0);
+  add(new THREE.CircleGeometry(SKY.rTop - .4, 40).rotateX(-Math.PI / 2), marble, 0, T + .03, 0);
+  const petal = new THREE.SphereGeometry(1, 14, 8), petalMat = new THREE.MeshStandardMaterial({ color: '#f2b7c8', roughness: .6 });
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, m = add(petal, petalMat, Math.cos(a) * 14, T - .6, Math.sin(a) * 14);
+    m.scale.set(1.2, .45, 3.6); m.rotation.y = -a + Math.PI / 2; m.rotateX(-.55); }
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; add(new THREE.CylinderGeometry(.22, .22, 4.4, 8), jade, Math.cos(a) * 4, T + 2.2, Math.sin(a) * 4); }
+  add(new THREE.ConeGeometry(6, 2.6, 6), jade, 0, T + 5.7, 0);
+  add(new THREE.SphereGeometry(.5, 12, 8), gold, 0, T + 7.2, 0);
+  const lamp = new THREE.Sprite(new THREE.SpriteMaterial({ map: (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,250,220,1)'); g.addColorStop(.35, 'rgba(255,210,120,.7)'); g.addColorStop(1, 'rgba(255,180,80,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })(),
+    blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  lamp.position.set(0, T + 3, 0); lamp.scale.setScalar(5); skyGrp.add(lamp);
+  const topSign = skySign('구름기둥 탑 · 선인 정원'); topSign.position.set(0, T + 4.6, 0); topSign.scale.setScalar(.8); skyGrp.add(topSign); skyFx.topSign = topSign;
+  // 빛의 사다리: a shaft of light from the pavilion roof up to the underside of the floating island
+  const y0 = T + 7.5, y1 = H - 60;
+  for (const [r, op, col] of [[1.4, .22, '#9fe8ff'], [.45, .55, '#ffffff']]) {
+    const m = add(new THREE.CylinderGeometry(r, r, y1 - y0, 16, 1, true), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), 0, (y0 + y1) / 2, 0);
+    m.userData.op = op; skyFx.ladder.push(m); }
+  // clouds the tower pierces (255-345 m)
+  const cloudTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+    for (let i = 0; i < 9; i++) { const px = 30 + Math.random() * 68, py = 40 + Math.random() * 48, r = 18 + Math.random() * 26, g = x.createRadialGradient(px, py, 0, px, py, r);
+      g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); }
+    return new THREE.CanvasTexture(c); })();
+  for (let i = 0, n = LOW ? 22 : 46; i < n; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, transparent: true, depthWrite: false, opacity: .8, color: '#ffffff' }));
+    const a = Math.random() * Math.PI * 2, r = 22 + Math.random() * 170, sc = 40 + Math.random() * 60;
+    sp.userData = { a, r, y: 255 + Math.random() * 90, w: (.004 + Math.random() * .006) * (Math.random() < .5 ? 1 : -1) }; sp.scale.set(sc, sc * .55, 1);
+    skyGrp.add(sp); skyFx.clouds.push(sp); }
+  // 천공 신전: a floating island, a marble disc, a two-tier jade-roofed octagonal hall, a garden, and the annex with the white-room door
+  const island = add(new THREE.ConeGeometry(SKY.rTemple, 62, 14, 4).rotateX(Math.PI), rock, 0, H - 32, 0);
+  const ip = island.geometry.attributes.position; for (let i = 0; i < ip.count; i++) { const y = ip.getY(i); if (y < 30) { ip.setX(i, ip.getX(i) * (.85 + Math.random() * .3)); ip.setZ(i, ip.getZ(i) * (.85 + Math.random() * .3)); } }
+  island.geometry.computeVertexNormals();
+  for (let i = 0; i < 7; i++) { const a = Math.random() * Math.PI * 2, r = 50 + Math.random() * 18, sz = 2 + Math.random() * 4;
+    const m = add(new THREE.DodecahedronGeometry(sz, 0), rock, Math.cos(a) * r, H - 18 - Math.random() * 30, Math.sin(a) * r); m.userData.bob = Math.random() * 6; m.userData.y0 = m.position.y; skyFx.lamps.push(m); }
+  add(new THREE.CylinderGeometry(SKY.rTemple + 1, SKY.rTemple, 2, 72), marble, 0, H - 1, 0);
+  add(new THREE.TorusGeometry(SKY.rTemple + 1, .5, 8, 120).rotateX(Math.PI / 2), gold, 0, H, 0);
+  add(new THREE.RingGeometry(14.5, 15.5, 64).rotateX(-Math.PI / 2), jade, -8, H + .03, 0);
+  add(new THREE.PlaneGeometry(22, 4).rotateX(-Math.PI / 2), jade, 14, H + .03, 0);
+  add(new THREE.CylinderGeometry(11, 11.5, 9, 8), marble, -8, H + 4.5, 0);
+  for (let i = 0; i < 8; i++) { const a = (i + .5) / 8 * Math.PI * 2;
+    add(new THREE.CylinderGeometry(.55, .65, 10, 10), marble, -8 + Math.cos(a) * 13.5, H + 5, Math.sin(a) * 13.5);
+    add(new THREE.CylinderGeometry(.9, .9, .6, 10), gold, -8 + Math.cos(a) * 13.5, H + 10.1, Math.sin(a) * 13.5); }
+  add(new THREE.ConeGeometry(16.5, 6.5, 8), jade, -8, H + 13.6, 0);
+  add(new THREE.CylinderGeometry(7, 8, 3.5, 8), marble, -8, H + 17, 0);
+  add(new THREE.ConeGeometry(10, 5.5, 8), jade, -8, H + 21.4, 0);
+  add(new THREE.CylinderGeometry(.18, .18, 6, 8), gold, -8, H + 26, 0);
+  add(new THREE.SphereGeometry(1.1, 16, 12), gold, -8, H + 24.6, 0);
+  add(new THREE.PlaneGeometry(4, 6.5), dark, -8 + 11.6, H + 3.25, 0).rotation.y = Math.PI / 2;
+  const hallSign = skySign('천공 신전'); hallSign.position.set(-8 + 11.7, H + 7.6, 0); hallSign.rotation.y = Math.PI / 2; hallSign.scale.setScalar(.75); skyGrp.add(hallSign);
+  // garden: round-crowned trees and a pond (kept clear of the hall and the annex path)
+  for (let i = 0, made = 0; i < 80 && made < 14; i++) { const a = Math.random() * Math.PI * 2, r = 22 + Math.random() * 16, x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (x > 8 && Math.abs(z) < 10) continue; if (Math.hypot(x + 20, z - 22) < 7) continue; made++;
+    add(new THREE.CylinderGeometry(.3, .45, 3, 7), rock, x, H + 1.5, z);
+    const cr = add(new THREE.IcosahedronGeometry(2.2 + Math.random(), 0), leaf, x, H + 4.2, z); cr.scale.y = .85; }
+  add(new THREE.CircleGeometry(5.5, 40).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#3f8fb0', roughness: .05, metalness: .5 }), -20, H + .05, 22);
+  // the annex: a plain white house whose dark doorway faces the hall
+  const annex = (grp, x, y, z, sign) => {
+    add(new THREE.BoxGeometry(8, 9, 10), marble, x + 4, y + 4.5, z, grp);
+    add(new THREE.BoxGeometry(9, .8, 11), gold, x + 4, y + 9.4, z, grp);
+    add(new THREE.PlaneGeometry(3.6, 6), dark, x - .02, y + 3, z, grp).rotation.y = -Math.PI / 2;
+    const fr = add(new THREE.TorusGeometry(2.3, .16, 8, 32, Math.PI), new THREE.MeshBasicMaterial({ color: '#ffe6a0' }), x - .05, y + 6, z, grp); fr.rotation.y = Math.PI / 2;
+    const sg = skySign(sign); sg.position.set(x - .1, y + 7.6, z); sg.rotation.y = -Math.PI / 2; sg.scale.setScalar(.75); grp.add(sg);
+  };
+  annex(skyGrp, 27, H, 0, '무한 백색의 방');
+  // 무한 백색의 방: a pocket of endless white, only drawn for whoever is inside
+  roomGrp.position.set(X, SKY.room, Z);
+  add(new THREE.SphereGeometry(240, 32, 16), new THREE.MeshBasicMaterial({ color: '#ffffff', side: THREE.BackSide }), 0, 0, 0, roomGrp);
+  add(new THREE.CircleGeometry(240, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#f4f4f0', roughness: .9 }), 0, 0, 0, roomGrp);
+  const grid = new THREE.GridHelper(420, 42, '#e3e3dc', '#ebebe5'); grid.position.y = .03; roomGrp.add(grid);
+  annex(roomGrp, -4.5, 0, 0, '나가는 문');
+}
+// arrival banners, the door in and out of the white room, the clock that runs 365× faster inside
+const roomHud = document.createElement('div');
+roomHud.style.cssText = 'position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:5;padding:8px 16px;border-radius:12px;background:rgba(20,24,30,.62);color:#fff;font:600 14px/1.4 system-ui,sans-serif;text-align:center;pointer-events:none;max-width:calc(100vw - 32px)';
+roomHud.hidden = true; document.body.append(roomHud);
+let roomT0 = 0, roomCool = 0, roomFog = null, skyZone = null, skyHintAt = -1e9;
+function skyTeleport(x, z, alt, rot) {
+  myPos.x = x; myPos.z = z; myAlt = alt; altV = 0; rideV = 0; myRot = rot;
+  camera.position.set(x - Math.sin(rot) * 14, alt + 7, z - Math.cos(rot) * 14); controls.target.set(x, alt + 2, z);
+  myAvatar.position.set(x, alt, z); myAvatar.rotation.y = rot; sendPresence(true);
+}
+function enterRoom() {
+  inChamber = true; roomGrp.visible = true; roomT0 = performance.now();
+  if (scene.fog) { roomFog = { c: scene.fog.color.clone(), d: scene.fog.density }; scene.fog.color.set('#ffffff'); scene.fog.density = .0055; }
+  skyTeleport(SKY.x - 15, SKY.z, SKY.room, -Math.PI / 2);
+  screenFx('#ffffff', '무한 백색의 방'); toast('바깥의 하루가 이곳에선 1년 · 뒤쪽 흰 집의 문으로 들어가면 나가요'); roomHud.hidden = false;
+}
+function exitRoom(silent) {
+  if (!inChamber) return;
+  inChamber = false; roomGrp.visible = false; roomHud.hidden = true; roomCool = performance.now() + 2500;
+  if (scene.fog && roomFog) { scene.fog.color.copy(roomFog.c); scene.fog.density = roomFog.d; } roomFog = null;
+  if (!silent) { skyTeleport(SKY.door.x - 8, SKY.door.z, SKY.temple, -Math.PI / 2); screenFx('#bfe8ff', '천공 신전'); }
+}
+function roomClamp(x, z) { const dx = x - SKY.x, dz = z - SKY.z, d = Math.hypot(dx, dz), R0 = 215;
+  return d <= R0 ? [x, z, 0] : [SKY.x + dx / d * R0, SKY.z + dz / d * R0, 1]; }
+// solid parts of the sky route for something flying at altitude alt
+function skySolid(x, z, alt) {
+  const d = Math.hypot(x - SKY.x, z - SKY.z), T = SKY.top, H = SKY.temple;
+  if (alt < T - .5 && d < 4.4 - 1.2 * Math.max(0, alt) / T + 1.4) return true;                     // the shaft
+  if (alt > T - 6 && alt < T - .5 && d < 5 + 9 * (1 - (T - alt) / 6) + 1) return true;            // the lotus bowl
+  if (alt > H - 63 && alt < H - .5 && d < SKY.rTemple * (1 - (H - alt) / 63) + 1.5) return true;  // the floating island
+  return false;
+}
+// floor and ceiling: the tower top and the temple can be landed on, and you can't climb up through them
+function altBounds(x, z, prev, max) {
+  if (inChamber) return [SKY.room, SKY.room + 120];
+  const d = Math.hypot(x - SKY.x, z - SKY.z), T = SKY.top, H = SKY.temple; let lo = 0, hi = max;
+  if (d < SKY.rTop && prev >= T - .6) lo = T;
+  if (d < SKY.rTemple + 1 && prev >= H - .6) lo = H;
+  if (d < SKY.rTop && prev < T - 1) hi = Math.min(hi, T - 7);
+  if (d < SKY.rTemple && prev < H - 1) hi = Math.min(hi, H - 63 * (1 - d / SKY.rTemple) - 1.5);
+  return [lo, Math.max(lo, hi)];
+}
+function updateSky(now, dt) {
+  const t = now / 1000;
+  for (const c of skyFx.clouds) { const u = c.userData; u.a += u.w * dt; c.position.set(Math.cos(u.a) * u.r, u.y, Math.sin(u.a) * u.r); }
+  for (const m of skyFx.ladder) m.material.opacity = m.userData.op * (.75 + .25 * Math.sin(t * 2.4));
+  for (const m of skyFx.lamps) m.position.y = m.userData.y0 + Math.sin(t * .8 + m.userData.bob) * 1.2;
+  if (skyFx.topSign) skyFx.topSign.rotation.y = t * .4;
+  if (!walking) return;
+  const R = RIDES[rideKind], d = Math.hypot(myPos.x - SKY.x, myPos.z - SKY.z);
+  if (inChamber) {
+    const s = (now - roomT0) / 1000 * 365, day = Math.floor(s / 86400), hr = Math.floor(s / 3600) % 24, mn = Math.floor(s / 60) % 60;
+    roomHud.textContent = `무한 백색의 방 · 이 안에서 흐른 시간 ${day}일 ${hr}시간 ${mn}분 (바깥 1분 = 안 6시간)`;
+    if (now - roomT0 > 2000 && Math.hypot(myPos.x - (SKY.x - 4.5), myPos.z - SKY.z) < 3.5 && myAlt < SKY.room + 8) exitRoom(false);
+    return;
+  }
+  if (!rideKind) { if (d < 18 && now - skyHintAt > 25000) { skyHintAt = now; toast('하늘 끝까지 뻗은 구름기둥 탑 · 용·로봇·우주선을 타고 Space로 올라가 보세요'); } return; }
+  if (!R || !R.fly) return;
+  const zone = d < SKY.rTop && Math.abs(myAlt - SKY.top) < 1 ? 'top' : d < SKY.rTemple + 1 && Math.abs(myAlt - SKY.temple) < 1 ? 'temple' : null;
+  if (zone && zone !== skyZone) {
+    if (zone === 'top') { screenFx('#ffe7a8', '선인 정원'); toast('구름기둥 탑 꼭대기 · 빛의 사다리를 따라 더 올라가면 천공 신전이에요'); }
+    else { screenFx('#bfe8ff', '천공 신전'); toast('천공 신전 · 동쪽 흰 집의 문으로 들어가면 무한 백색의 방'); }
+  }
+  if (zone || myAlt < SKY.top - 40) skyZone = zone;
+  if (now > roomCool && Math.hypot(myPos.x - SKY.door.x, myPos.z - SKY.door.z) < 3.5 && myAlt > SKY.temple - .5 && myAlt < SKY.temple + 10) enterRoom();
+}
+
 // ---- ride specials: R while mounted on the dragon or a giant robot ----
 const RIDE_SP = {
   7: { name: '용염 브레스', color: '#ff7a1f' },
@@ -2988,6 +3166,7 @@ function setRide(k) {
   if (k && RIDES[k].only && me.k !== RIDES[k].only) { toast(`${CHARS[RIDES[k].only - 1]}만 쓸 수 있어요`); return; }
   if (k && (!walking || tourOn)) { if (tourOn) toast('실사 사진 속에서는 탈 수 없어요'); return; }
   if (k === rideKind) return;
+  if (inChamber) exitRoom(true);
   if (myAlt > 0) { camera.position.y -= myAlt; myAlt = 0; altV = 0; myAvatar.position.y = 0; spaceK = 0; applySpace(0); } // getting off in the air: the dragon sets you down first
   rideKind = k; if (k && !RIDES[k].only) lastRide = k; rideV = 0; rideSteer = 0; launchT0 = null; launchShown = false; dest = null; destMark.visible = false;
   myAvatar.userData.atk = k >= 2 ? null : myAvatar.userData.atk;
@@ -3031,13 +3210,15 @@ function updateRide(dt, now) {
   const nx = myPos.x + Math.sin(myRot) * rideV * dt, nz = myPos.z + Math.cos(myRot) * rideV * dt, bx = clampX(nx), bz = clampZ(nz);
   // above the city roofs (27 m) nothing blocks a dragon, except the basilica itself until it is clear of the nave roof
   const overChurch = (x, z) => insideAt(x, z) || insideAt(x + 3, z) || insideAt(x - 3, z) || insideAt(x, z + 3) || insideAt(x, z - 3);
-  const [cx, cz, hit] = R.fly && myAlt > 32 ? (myAlt > 62 || !overChurch(bx, bz) ? [bx, bz, 0] : [myPos.x, myPos.z, 2]) : moveTry(myPos.x, myPos.z, bx, bz);
+  let [cx, cz, hit] = inChamber ? roomClamp(nx, nz) : R.fly && myAlt > 32 ? (myAlt > 62 || !overChurch(bx, bz) ? [bx, bz, 0] : [myPos.x, myPos.z, 2]) : moveTry(myPos.x, myPos.z, bx, bz);
+  if (R.fly && !inChamber && skySolid(cx, cz, myAlt)) [cx, cz, hit] = [myPos.x, myPos.z, 2];
   if (R.fly) { // Space / C (or the pad) climb and descend; the dragon hovers wherever you let go
     const up = (keys[' '] || padUp ? 1 : 0) - (keys.c || padDown ? 1 : 0), want = up * (R.climb || 12) * (boosting ? 1.7 : 1);
     altV += (want - altV) * Math.min(1, dt * 3);
-    const prev = myAlt; myAlt = THREE.MathUtils.clamp(myAlt + altV * dt, 0, insideAt(myPos.x, myPos.z) && prev < 40 ? 30 : (R.altMax || 260)); if (myAlt <= 0 && altV < 0) altV = 0;
+    const prev = myAlt, [lo, hi] = altBounds(myPos.x, myPos.z, prev, insideAt(myPos.x, myPos.z) && prev < 40 ? 30 : (R.altMax || 260));
+    myAlt = THREE.MathUtils.clamp(myAlt + altV * dt, lo, hi); if (myAlt <= lo && altV < 0) altV = 0;
     camera.position.y += myAlt - prev;
-    if (R.ship) { const sk = THREE.MathUtils.clamp((myAlt - 300) / 1700, 0, 1); spaceK = sk;
+    if (R.ship && !inChamber) { const sk = THREE.MathUtils.clamp((myAlt - 300) / 1700, 0, 1); spaceK = sk;
       applySpace(sk);
       if (sk > .98 && !saidSpace) { saidSpace = true; toast('대기권 돌파! 우주에 도착했어요'); } else if (sk < .5) saidSpace = false; }
   }
@@ -3095,7 +3276,7 @@ renderer.setAnimationLoop((now) => {
   if (tween) { const k = Math.min(1, (now - tween.s) / tween.d), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
     camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e); if (k >= 1) tween = null; }
   if (tourOn) updateTour(now);
-  updateDomains(now); updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now); updateFx(now, dt);
+  updateDomains(now); updateSky(now, dt); updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now); updateFx(now, dt);
   controls.update(); if (walking && camera.position.y < .4) camera.position.y = .4;
   if (!tourOn) doPick(); updateScreen(now);
   const sh = shakeOffset(now); camera.position.add(sh);
