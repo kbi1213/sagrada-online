@@ -66,11 +66,11 @@ function cleanPresence(p) {
       case 'n': if (typeof v === 'string') { const n = cleanName(v); if (n) out.n = n; } break;
       case 'c': if (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)) out.c = v; break;
       case 'w': out.w = v === 1 ? 1 : 0; break;
-      case 'k': if (Number.isInteger(v) && v >= 0 && v <= 14) out.k = v; break; // character sheet 1..7, 0 = cloak
+      case 'k': if (Number.isInteger(v) && v >= 0 && v <= 20) out.k = v; break; // character sheet 1..7, 0 = cloak
       case 'x': case 'z': { const n = num(v, -1000, 1000); if (n !== undefined) out[k] = Math.round(n * 100) / 100; break; }
       case 'r': { const n = num(v, -10, 10); if (n !== undefined) out.r = Math.round(n * 100) / 100; break; }
       case 'a': if (v === 'bow' || v === 'dance' || v === 'atk' || v === 'sp' || v === 'tj') out.a = v; break; // gestures, attack, special move
-      case 'v': if (Number.isInteger(v) && v >= 0 && v <= 5) out.v = v; break; // ride: 0 on foot, 1 horse, 2 Porsche, 3 AMG, 4 gull-wing, 5 cruiser
+      case 'v': if (Number.isInteger(v) && v >= 0 && v <= 6) out.v = v; break; // ride: 0 on foot, 1 horse, 2 Porsche, 3 AMG, 4 gull-wing, 5 cruiser
       case 's': if (SPOTS.has(v)) out.s = v; break;
       case 't': { const n = num(v, 0, 1e14); if (n !== undefined) out.t = n; break; }
     }
