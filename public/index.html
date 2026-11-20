@@ -516,6 +516,7 @@ const wallMats = { cool: wallMat(makeBaySurf(COOL)), warm: wallMat(makeBaySurf(W
 const vT = makeVaultTex();
 const vaultMat = new THREE.MeshStandardMaterial({ map: vT.map, emissiveMap: vT.em, emissive: WHITE, emissiveIntensity: .35, roughness: .8 });
 const roofMat = stoneOf('#b8a083');
+const ridgeMat = new THREE.MeshStandardMaterial({ color: '#b8a083', roughness: .9 }); // pitched ridges: extrusions carry metre UVs
 const MOSAICS = [];
 const mosaic = (c, e = 0.05) => { const m = new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: e, roughness: .2, metalness: .12 }); MOSAICS.push(m); return m; };
 const redM = mosaic('#b8322a'), whiteM = mosaic('#f2eee4', .03), greenM = mosaic('#2f8a55');
@@ -541,15 +542,23 @@ function photo(url, { srgb = true, rep = null } = {}) {
 }
 (async () => {
   const [stoneT, stoneN] = await Promise.all([photo('/textures/stone.jpg', { rep: [6, 6] }), photo('/textures/stone_n.jpg', { srgb: false, rep: [6, 6] })]);
-  if (stoneT) for (const m of [stoneMat, stoneDark, colMat, roofMat]) { if (m === colMat) m.color.set('#dfe2e6');
+  if (stoneT) for (const m of [stoneMat, stoneDark, colMat]) { if (m === colMat) m.color.set('#dfe2e6');
      { m.map = stoneT; if (stoneN) m.normalMap = stoneN; m.needsUpdate = true; } }
   const [tw, twE, twN] = await Promise.all(['tower.jpg', 'tower_e.jpg', 'tower_n.jpg'].map((f, i) => photo('/textures/' + f, { srgb: i !== 2 })));
   if (tw && twE && twN) { Object.assign(towerMat, { map: tw, emissiveMap: twE, normalMap: twN, roughnessMap: null, roughness: .86 }); towerMat.needsUpdate = true; }
-  const [bN, bR] = await Promise.all([photo('/textures/bay_n.jpg', { srgb: false }), photo('/textures/bay_r.jpg', { srgb: false })]);
+  // photographed window bays: carved tracery + stained glass; the glass alone glows at night
   for (const k of ['cool', 'warm', 'mix']) {
-    const [m, e] = await Promise.all([photo(`/textures/bay_${k}.jpg`), photo(`/textures/bay_${k}_e.jpg`)]);
-    if (m && e && bN && bR) { Object.assign(wallMats[k], { map: m, emissiveMap: e, normalMap: bN, roughnessMap: bR }); wallMats[k].needsUpdate = true; }
+    const [m, e, n] = await Promise.all([photo(`/textures/bay_${k}.jpg`), photo(`/textures/bay_${k}_e.jpg`), photo(`/textures/bay_${k}_n.jpg`, { srgb: false })]);
+    if (m && e) { Object.assign(wallMats[k], { map: m, emissiveMap: e, normalMap: n, roughnessMap: null, roughness: .88 }); wallMats[k].needsUpdate = true; }
   }
+  // basilica roofs: sandstone slabs with rows of small skylight lanterns (roof planes carry ~18 m tiles)
+  const [cr, crN] = await Promise.all([photo('/textures/churchroof.jpg'), photo('/textures/churchroof_n.jpg', { srgb: false })]);
+  if (cr) { Object.assign(roofMat, { map: cr, normalMap: crN, roughnessMap: null, roughness: .9 }); roofMat.color.set('#ffffff'); roofMat.needsUpdate = true;
+    const rc = cr.clone(), rn = crN && crN.clone(); for (const t of [rc, rn]) if (t) { t.repeat.set(1 / 14, 1 / 14); t.needsUpdate = true; }
+    Object.assign(ridgeMat, { map: rc, normalMap: rn }); ridgeMat.color.set('#e8dccb'); ridgeMat.needsUpdate = true; }
+  // Eixample roof terraces seen from above (block caps carry world-metre UVs: one tile = 40 m)
+  const [ct, ctN] = await Promise.all([photo('/textures/cityroof.jpg', { rep: [1 / 40, 1 / 40] }), photo('/textures/cityroof_n.jpg', { srgb: false, rep: [1 / 40, 1 / 40] })]);
+  if (ct && window.__cityRoof) { Object.assign(window.__cityRoof, { map: ct, normalMap: ctN, roughness: .93 }); window.__cityRoof.color.set('#ffffff'); window.__cityRoof.needsUpdate = true; }
   const [vt, ve] = await Promise.all([photo('/textures/vault.jpg'), photo('/textures/vault_e.jpg')]);
   if (vt && ve) { Object.assign(vaultMat, { map: vt, emissiveMap: ve }); vaultMat.needsUpdate = true; }
   // Eixample facade photo: one tile = 4 bays x 4 floors = 12 m x 12 m (the extrusions carry world-metre UVs)
@@ -654,15 +663,60 @@ pond.scale.set(22, 1, 34); pond.position.set(PITCH - 6, .12, -2); scene.add(pond
 { // city blocks with chamfered corners (xamfrà) and inner courtyards
   const city = makeCitySurf();
   const facade = new THREE.MeshStandardMaterial({ map: city.map, normalMap: city.normal, roughnessMap: city.rough, roughness: 1, emissiveMap: city.em, emissive: WHITE, emissiveIntensity: 0 });
-  const roofs = [new THREE.MeshStandardMaterial({ color: '#b49c80', roughness: 1 }), new THREE.MeshStandardMaterial({ color: '#a88f74', roughness: 1 })];
+  const roofTop = new THREE.MeshStandardMaterial({ color: '#b49c80', roughness: 1 }); window.__cityRoof = roofTop; const roofs = [roofTop, roofTop];
   const shape = octShape(S, CH); const hole = new THREE.Path(); const hi = S / 2 - 26;
   hole.moveTo(-hi, -hi); hole.lineTo(-hi, hi); hole.lineTo(hi, hi); hole.lineTo(hi, -hi); hole.closePath(); shape.holes.push(hole);
   const geos = [18, 21, 24, 27].map(d => new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: false }).rotateX(-Math.PI / 2));
   window.__cityFacade = facade;
+  const DEP = [18, 21, 24, 27], blocks = [];
   for (let i = -6; i <= 6; i++) for (let j = -6; j <= 6; j++) {
     if (j === 0 && Math.abs(i) <= 1) continue;
-    const mesh = new THREE.Mesh(geos[(rand() * 4) | 0], [roofs[(rand() * 2) | 0], facade]);
+    const di = (rand() * 4) | 0;
+    const mesh = new THREE.Mesh(geos[di], [roofs[0], facade]);
     mesh.position.set(i * PITCH, 0, j * PITCH); mesh.receiveShadow = true; mesh.castShadow = true; scene.add(mesh);
+    blocks.push([i * PITCH, DEP[di], j * PITCH]);
+  }
+  // parapet + cornice around every roof edge (outer and courtyard side), one instanced mesh each
+  const ring = (inset, w) => { const o = octShape(S - inset * 2, Math.max(1, CH - inset * .8)), h = new THREE.Path(), a = S / 2 - inset - w;
+    const c = Math.max(.5, CH - (inset + w) * .8); h.moveTo(-a + c, -a); h.lineTo(-a, -a + c); h.lineTo(-a, a - c); h.lineTo(-a + c, a); h.lineTo(a - c, a); h.lineTo(a, a - c); h.lineTo(a, -a + c); h.lineTo(a - c, -a); h.closePath(); o.holes.push(h); return o; };
+  const inner = (half, w) => { const o = new THREE.Shape(); o.moveTo(-half, -half); o.lineTo(half, -half); o.lineTo(half, half); o.lineTo(-half, half); o.closePath();
+    const h = new THREE.Path(), a = half - w; h.moveTo(-a, -a); h.lineTo(-a, a); h.lineTo(a, a); h.lineTo(a, -a); h.closePath(); o.holes.push(h); return o; };
+  const capMat = new THREE.MeshStandardMaterial({ color: '#d9cdb8', roughness: .9 });
+  const corMat = new THREE.MeshStandardMaterial({ color: '#c9b89c', roughness: .85 });
+  const pieces = [
+    [new THREE.ExtrudeGeometry(ring(0, .45), { depth: 1.15, bevelEnabled: false }).rotateX(-Math.PI / 2), capMat, 0],     // parapet wall, outer edge
+    [new THREE.ExtrudeGeometry(ring(-.55, 1.1), { depth: .38, bevelEnabled: false }).rotateX(-Math.PI / 2), corMat, -.55], // projecting cornice just below
+    [new THREE.ExtrudeGeometry(inner(hi + .45, .45), { depth: 1.15, bevelEnabled: false }).rotateX(-Math.PI / 2), capMat, 0], // courtyard parapet
+  ];
+  const m4 = new THREE.Matrix4();
+  for (const [geo, mat, dy] of pieces) {
+    const im = new THREE.InstancedMesh(geo, mat, blocks.length);
+    blocks.forEach(([x, y, z], k) => im.setMatrixAt(k, m4.makeTranslation(x, y + dy, z)));
+    im.castShadow = true; im.receiveShadow = true; scene.add(im);
+  }
+  // Eixample block interiors are gardens: a lawn with a paved border in every courtyard
+  { const lawn = new THREE.InstancedMesh(scaleUV(new THREE.PlaneGeometry(hi * 2 - 6, hi * 2 - 6), hi * 2 - 6, hi * 2 - 6).rotateX(-Math.PI / 2), grassMat, blocks.length);
+    const edge = new THREE.InstancedMesh(scaleUV(new THREE.PlaneGeometry(hi * 2, hi * 2), hi * 2, hi * 2).rotateX(-Math.PI / 2), paveMat, blocks.length);
+    blocks.forEach(([x, , z], k) => { lawn.setMatrixAt(k, m4.makeTranslation(x, .09, z)); edge.setMatrixAt(k, m4.makeTranslation(x, .07, z)); });
+    lawn.receiveShadow = edge.receiveShadow = true; scene.add(lawn, edge); }
+  // rooftop clutter lives on the ring of roof between the street front and the courtyard
+  const spots = (n) => { const out = []; for (const [bx, by, bz] of blocks) for (let q = 0; q < n; q++) {
+    const side = (rand() * 4) | 0, along = rr(-S / 2 + CH + 3, S / 2 - CH - 3), depth = rr(hi + 3, S / 2 - 3);
+    const [x, z] = side === 0 ? [along, depth] : side === 1 ? [along, -depth] : side === 2 ? [depth, along] : [-depth, along];
+    out.push([bx + x, by, bz + z, side]); } return out; };
+  const stuccoT = new THREE.MeshStandardMaterial({ color: '#e8e2d6', roughness: .95 });
+  const tankT = new THREE.MeshStandardMaterial({ color: '#9aa3a8', roughness: .55, metalness: .4 });
+  const brickT = new THREE.MeshStandardMaterial({ color: '#9b5a3c', roughness: .95 });
+  const kinds = [
+    [new THREE.BoxGeometry(1, 1, 1).translate(0, .5, 0), stuccoT, 3, (sv) => sv.set(rr(3.5, 6), rr(2.6, 3.4), rr(3, 4.5))],   // stair / lift housings
+    [new THREE.CylinderGeometry(.5, .5, 1, 14).translate(0, .5, 0), tankT, 4, (sv) => { const r = rr(1.2, 1.8); sv.set(r, rr(1.6, 2.4), r); }], // water tanks
+    [new THREE.BoxGeometry(1, 1, 1).translate(0, .5, 0), brickT, 7, (sv) => sv.set(rr(.6, .9), rr(1.4, 2.4), rr(.6, .9))],     // chimneys
+  ];
+  const q4 = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3(), ay = new THREE.Vector3(0, 1, 0);
+  for (const [geo, mat, n, size] of kinds) {
+    const list = spots(n), im = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach(([x, y, z, side], k) => { q4.setFromAxisAngle(ay, side < 2 ? 0 : Math.PI / 2); size(sv); m4.compose(pv.set(x, y, z), q4, sv); im.setMatrixAt(k, m4); });
+    im.castShadow = true; im.receiveShadow = true; scene.add(im);
   }
 }
 
@@ -677,7 +731,7 @@ function wall(ax, az, bx, bz, y0, y1) {
   m.castShadow = true; m.receiveShadow = true; church.add(m);
 }
 function roof(x0, x1, z0, z1, y) {
-  const top = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2), roofMat);
+  const top = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(x1 - x0, z1 - z0), (x1 - x0) / 18, (z1 - z0) / 18).rotateX(-Math.PI / 2), roofMat);
   top.position.set((x0 + x1) / 2, y, (z0 + z1) / 2); top.receiveShadow = true; top.castShadow = true; church.add(top);
   const ce = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(x1 - x0, z1 - z0), (x1 - x0) / 15, (z1 - z0) / 15).rotateX(Math.PI / 2), vaultMat);
   ce.position.set((x0 + x1) / 2, y - .05, (z0 + z1) / 2); church.add(ce);
@@ -711,8 +765,8 @@ wall(-22.5, 45, 22.5, 45, 0, 30); wall(-7.5, 45, 7.5, 45, 30, 45);              
 }
 { // ridges over nave and transept
   const tri = new THREE.Shape(); tri.moveTo(-7.5, 0); tri.lineTo(7.5, 0); tri.lineTo(0, 13); tri.closePath();
-  const nr = new THREE.Mesh(new THREE.ExtrudeGeometry(tri, { depth: 75, bevelEnabled: false }), stoneDark); nr.position.set(0, 45, -30); nr.castShadow = true; church.add(nr);
-  const tr = new THREE.Mesh(new THREE.ExtrudeGeometry(tri, { depth: 60, bevelEnabled: false }).rotateY(Math.PI / 2), stoneDark); tr.position.set(-30, 45, F); tr.castShadow = true; church.add(tr);
+  const nr = new THREE.Mesh(new THREE.ExtrudeGeometry(tri, { depth: 75, bevelEnabled: false }), ridgeMat); nr.position.set(0, 45, -30); nr.castShadow = true; church.add(nr);
+  const tr = new THREE.Mesh(new THREE.ExtrudeGeometry(tri, { depth: 60, bevelEnabled: false }).rotateY(Math.PI / 2), ridgeMat); tr.position.set(-30, 45, F); tr.castShadow = true; church.add(tr);
   // Gaudí roof lanterns along aisles
   const lg = new THREE.ConeGeometry(1.6, 8, 8);
   const spots = []; for (let z = 16; z <= 44; z += 7) spots.push([22.5, z], [-22.5, z]);
