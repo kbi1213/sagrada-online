@@ -1106,7 +1106,7 @@ function nameSprite(text, isMe) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
   s.scale.set(2.2, .41, 1); s.position.y = 2.15; return s;
 }
-const CHARS = ['하준', '도윤', '서진', '이안', '태오', '민혁', '유찬', '유비', '관우', '장비', '조자룡', '별빛 우주친구', '빨강머리 포워드', '주장 센터', '예수', '부처', '달마대사', '고무팔 선원', '진홍 무도가', '분홍 지니', '성운 결계사', '금빛 검객'];
+const CHARS = ['하준', '도윤', '서진', '이안', '태오', '민혁', '유찬', '유비', '관우', '장비', '조자룡', '별빛 우주친구', '빨강머리 포워드', '주장 센터', '예수', '부처', '달마대사', '고무팔 선원', '진홍 무도가', '분홍 지니', '성운 결계사', '금빛 검객', '한방 히어로', '그림자 소환사'];
 const SPRITE_CHARS = 7; // 1..7 have photo sprites as a stand-in while the 3D model loads
 // weapons held by the Three Kingdoms heroes: file, length in metres, grip point from the butt end (0..1), both hands
 
@@ -1127,6 +1127,8 @@ const HERO = {
   20: { color: '#ff8fd0', sp: '분홍 회오리', dur: 2.0 },
   21: { color: '#7fd8ff', sp: '결계 전개 · 무한 성운', dur: 2.6 },
   22: { color: '#ff2a3a', sp: '검혼 해방 · 흑월천참', dur: 2.8 },
+  23: { color: '#fff4c8', sp: '평범한 한 방', dur: 2.4 },
+  24: { color: '#9b5cff', sp: '그림자 군단 기상', dur: 3.0 },
 };
 // rides: length in metres, top speed (m/s) normally and with Shift, acceleration (m/s²), braking, steering rate
 const DOMAIN_R = 38, DOMAIN_MS = 9000;
@@ -1207,7 +1209,7 @@ let myAlt = 0, altV = 0, padUp = false, padDown = false;
 let rideKind = 0, lastRide = 2, rideV = 0, rideSteer = 0, rideAcc = 0, launchT0 = null, launchShown = false;
 const joy = { on: false, x: 0, y: 0 }; let boostHeld = false, navTimer = 0;
 let atkReady = 0, spReady = 0, soundOn = true, actx = null, eng = null, shakeT = -1e9, shakeA = 0, spLabel = '';
-const WEAPONS = { 8: { f: 'w8', len: .95, grip: .1, both: true, hold: [1.05, .28] }, 9: { f: 'w9', len: 2.3, grip: .38 }, 10: { f: 'w10', len: 2.6, grip: .38 }, 11: { f: 'w11', len: 2.5, grip: .38 }, 22: { f: 'w22', len: 1.75, grip: .2 } };
+const WEAPONS = { 8: { f: 'w8', len: .95, grip: .1, both: true, hold: [1.05, .28] }, 9: { f: 'w9', len: 2.3, grip: .38 }, 10: { f: 'w10', len: 2.6, grip: .38 }, 11: { f: 'w11', len: 2.5, grip: .38 }, 22: { f: 'w22', len: 1.75, grip: .2 }, 24: { f: 'w24', len: .62, grip: .2, both: true, hold: [1.05, .28] } };
 const charTex = {};
 function charTextures(k) {
   if (!charTex[k]) {
@@ -2075,6 +2077,22 @@ function atkState(g) {
         fire('beam', () => { beamFx(g, C, 28, 900); lightFx(P.x, 1.4, P.z, C, 45, 900); shake(.9 * near); sfx('boom', near); if (g === myAvatar) screenFx(C); }); }
       else { e = seg(t, 1.9, a.dur); s.arm = s.armL = -1.55 * (1 - e); s.y = -.15 * (1 - e); }
       break;
+    case 24: // shadow army: one hand held out low over the ground, the ground goes dark, then a sharp upward gesture and shadow soldiers rise
+      if (t < .9) { e = seg(t, 0, .9); s.armL = -1.2 * e; s.arm = -.3 * e; s.y = -.05 * e;
+        fire('call', () => { shadowPoolFx(g, C, 9500); dustFx(P.x, P.z, 10, 4, '#2a1840'); sfx('slash', near * .5); }); }
+      else if (t < 1.5) { e = seg(t, .9, 1.5); s.armL = -1.2 - 1.6 * e; s.arm = -.3; s.y = -.05 + .1 * e;
+        fire('arise', () => { shadowArmyFx(g, C); lightFx(P.x, 2, P.z, C, 40, 900); shake(.9 * near); sfx('boom', near); if (g === myAvatar) screenFx('#5a2a9a'); }); }
+      else { e = seg(t, 1.5, a.dur); s.armL = -2.8 * (1 - e); s.arm = -.3 * (1 - e); s.y = .05 * (1 - e); }
+      break;
+    case 23: // one ordinary punch: a casual pull-back, then a straight right that blows a tunnel through the air and splits the clouds
+      if (t < .85) { e = seg(t, 0, .85); s.arm = .5 * e; s.armL = -.3 * e; s.tw = .55 * e; s.y = -.08 * e;
+        fire('ready', () => { dustFx(P.x, P.z, 4, 1.5); sfx('slash', near * .3); }); }
+      else if (t < 1.05) { e = seg(t, .85, 1.05); s.arm = .5 - 2.05 * e; s.armL = -.3; s.tw = .55 - .9 * e; s.lunge = .55 * e; s.y = -.08;
+        fire('punch', () => { onePunchFx(g, C); lightFx(P.x, 1.5, P.z, '#ffffff', 60, 600); shake(1.6 * near); sfx('boom', near); setTimeout(() => sfx('boom', near * .7), 260);
+          if (g === myAvatar) screenFx('#ffffff'); }); }
+      else if (t < 1.7) { s.arm = -1.55; s.armL = -.3; s.tw = -.35; s.lunge = .55; s.y = -.08; }
+      else { e = seg(t, 1.7, a.dur); s.arm = -1.55 * (1 - e); s.armL = -.3 * (1 - e); s.tw = -.35 * (1 - e); s.lunge = .55 * (1 - e); s.y = -.08 * (1 - e); }
+      break;
     case 22: // sword release: raise the great sword, a black-crimson storm erupts and stays around him, then a downward cut throws a black crescent
       if (t < 1.1) { e = seg(t, 0, 1.1); s.arm = -2.9 * e; s.armL = -.6 * e; s.y = .1 * e;
         fire('release', () => { releaseFx(g, 15000); pillarFx(P.x, P.z, C, 14, 1100); ringFx(P.x, P.z, C, 7, 900); dustFx(P.x, P.z, 14, 5);
@@ -2402,6 +2420,73 @@ function blackMoonFx(g, color, dist) {
   flashFx(x0 + Math.sin(yaw) * 2, y0 + 1.5, z0 + Math.cos(yaw) * 2, color);
   setTimeout(() => { const ex = x0 + Math.sin(yaw) * (dist + 1.5), ez = z0 + Math.cos(yaw) * (dist + 1.5);
     ringFx(ex, ez, color, 9, 800); pillarFx(ex, ez, color, 10, 800); dustFx(ex, ez, 16, 6); sparksFx(ex, 1, ez, '#ff5a4a', 60, 7); }, 1150);
+}
+
+// --- one ordinary punch: sonic rings racing down a tunnel of wind, a long gouge in the ground, and a hole punched through the sky ---
+function onePunchFx(g, color) {
+  const yaw = g.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw), x0 = g.position.x, z0 = g.position.z, y0 = g.position.y + 1.35;
+  flashFx(x0 + fx * 1.1, y0, z0 + fz * 1.1, '#ffffff');
+  // rings of compressed air, one after another, growing as they fly
+  for (let i = 0; i < 7; i++) setTimeout(() => {
+    const m = new THREE.Mesh(new THREE.TorusGeometry(1, .07, 8, 48), addMat(i % 2 ? color : '#ffffff')); m.userData.ownGeo = true; m.rotation.y = yaw;
+    addFx(m, 900, k => { const d = 1.5 + k * (30 + i * 9); m.position.set(x0 + fx * d, y0 + k * i * .4, z0 + fz * d); const r = .6 + k * (2.5 + i * .9); m.scale.set(r, r, r); m.material.opacity = (1 - k) * .9; });
+  }, i * 70);
+  // the wind tunnel: a long translucent cone that shoots forward
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 32, 1, true).rotateX(-Math.PI / 2).translate(0, 0, .5), addMat('#dff6ff')); cone.userData.ownGeo = true;
+  cone.position.set(x0 + fx * .8, y0, z0 + fz * .8); cone.rotation.y = yaw;
+  addFx(cone, 800, k => { const L = 4 + 80 * Math.min(1, k * 1.6), R = .3 + 7 * k; cone.scale.set(R, R, L); cone.material.opacity = (1 - k) * .35; });
+  // the ground gouge: cracks and dust all the way down the line
+  for (let i = 1; i <= 8; i++) setTimeout(() => { const d = i * 8, cx = x0 + fx * d, cz = z0 + fz * d;
+    crackFx(cx, cz, 2 + i * .25, color); dustFx(cx, cz, 8, 3 + i * .3); if (i % 2) sparksFx(cx, .5, cz, '#ffffff', 16, 6); }, 40 + i * 45);
+  dustFx(x0, z0, 18, 6); ringFx(x0, z0, color, 12, 900); crackFx(x0 + fx * 1.5, z0 + fz * 1.5, 4, color);
+  // the sky: a huge ring tears open overhead and spreads out like parting clouds
+  setTimeout(() => {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(.82, 1, 96).rotateX(-Math.PI / 2), addMat('#ffffff')); ring.userData.ownGeo = true;
+    const tx = x0 + fx * 60, tz = z0 + fz * 60; ring.position.set(tx, 70, tz);
+    addFx(ring, 1800, k => { const r = 10 + 190 * (1 - Math.pow(1 - k, 3)); ring.scale.set(r, 1, r); ring.material.opacity = (1 - k) * .7; });
+    const hole = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#cfeeff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+    hole.position.set(tx, 70, tz); addFx(hole, 1500, k => { const r = 40 + 160 * k; hole.scale.set(r, r * .35, 1); hole.material.opacity = (1 - k) * .8; });
+    shake(.5);
+  }, 300);
+}
+
+// --- shadow army: a pool of darkness, then silhouettes of the summoner himself climb out of it with glowing violet eyes ---
+function shadowPoolFx(g, color, dur) {
+  const x = g.position.x, z = g.position.z, y = g.position.y + .04, grp = new THREE.Group();
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#07030c', transparent: true, opacity: 0, depthWrite: false }));
+  const rim = new THREE.Mesh(new THREE.RingGeometry(.94, 1, 64).rotateX(-Math.PI / 2), addMat(color)); pool.userData.ownGeo = rim.userData.ownGeo = true; rim.position.y = .01;
+  grp.add(pool, rim); grp.position.set(x, y, z);
+  addFx(grp, dur, k => { const r = 11 * (1 - Math.pow(1 - Math.min(1, k * 8), 3)), f = k > .9 ? (1 - k) / .1 : 1;
+    grp.scale.set(Math.max(.01, r), 1, Math.max(.01, r)); pool.material.opacity = .72 * f; rim.material.opacity = (.55 + Math.sin(performance.now() / 120) * .2) * f; });
+}
+function shadowArmyFx(g, color) {
+  const src = g.userData.model3d, yaw = g.rotation.y, n = LOW ? 4 : 8, DUR = 8500;
+  const spots = [];
+  for (let i = 0; i < n; i++) { const a = (i / (n - 1) - .5) * 2.4, r = 4.5 + (i % 2) * 2.2; spots.push([a, r, .95 + Math.random() * .25, i * 110]); }
+  spots.push([0, 8.5, 2.3, 380]); // the knight: twice the size, at the back
+  for (const [a, r, sc, delay] of spots) {
+    const grp = new THREE.Group(), x = g.position.x + Math.sin(yaw + a) * r, z = g.position.z + Math.cos(yaw + a) * r, y0 = g.position.y;
+    const mat = new THREE.MeshBasicMaterial({ color: '#0e0717', transparent: true, opacity: .94 });
+    let body;
+    if (src) { body = THREE.SkeletonUtils.clone(src); const baseQ = new Map((g.userData.base || []).map(([b, q]) => [b.name, q]));
+      body.traverse(o => { if (o.isBone && baseQ.has(o.name)) o.quaternion.copy(baseQ.get(o.name)); if (o.isMesh) { o.material = mat; o.castShadow = false; o.frustumCulled = false; } }); }
+    else { body = new THREE.Group(); const c = new THREE.Mesh(new THREE.CapsuleGeometry(.28, 1.1, 4, 12), mat); c.position.y = .85; const h = new THREE.Mesh(new THREE.SphereGeometry(.2, 12, 8), mat); h.position.y = 1.62;
+      c.userData.ownGeo = h.userData.ownGeo = true; body.add(c, h); }
+    grp.add(body);
+    const aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, fog: false }));
+    aura.position.y = .95; aura.scale.set(1.5, 2.6, 1); grp.add(aura);
+    const eyes = [-.045, .045].map(ex => { const e = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#d8b0ff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, fog: false }));
+      e.position.set(ex, 1.62, .13); e.scale.setScalar(.13); grp.add(e); return e; });
+    grp.scale.setScalar(sc); grp.rotation.y = yaw; grp.position.set(x, y0 - 2.2 * sc, z);
+    setTimeout(() => { dustFx(x, z, 6, 2, '#2a1840'); sparksFx(x, .3, z, color, 14, 3); }, delay);
+    addFx(grp, DUR + delay, (k, o, dt) => {
+      const tms = k * (DUR + delay) - delay; if (tms < 0) return;
+      const up = Math.min(1, tms / 700), e = 1 - Math.pow(1 - up, 3), end = tms > DUR - 900 ? (DUR - tms) / 900 : 1;
+      grp.position.y = y0 - 2.2 * sc * (1 - e) - 2.2 * sc * (1 - Math.max(0, end)) * .6 + Math.sin(tms / 600 + a * 3) * .03;
+      const f = Math.max(0, end); mat.opacity = .94 * f; aura.material.opacity = (.35 + Math.sin(tms / 150 + a) * .08) * e * f;
+      for (const ey of eyes) ey.material.opacity = (up >= 1 ? 1 : 0) * f;
+    });
+  }
 }
 function textFx(g, text, color, y0 = 3.1) {
   const c = cv(1024, 192), x = c.getContext('2d');
