@@ -534,8 +534,9 @@ const grassMat = new THREE.MeshStandardMaterial({ map: GRASS.map, normalMap: GRA
 
 // ---------- photo textures baked from the Higgsfield images (procedural maps above stay as the instant fallback) ----------
 const texLoader = new THREE.TextureLoader();
+const TEX_V = '7'; // bump when files in /textures are replaced so browsers drop their cached copy
 function photo(url, { srgb = true, rep = null } = {}) {
-  return new Promise(res => texLoader.load(url, t => {
+  return new Promise(res => texLoader.load(`${url}?v=${TEX_V}`, t => {
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = maxAniso;
     if (srgb) t.encoding = THREE.sRGBEncoding; if (rep) t.repeat.set(rep[0], rep[1]); res(t);
   }, undefined, () => res(null)));
@@ -649,7 +650,7 @@ pond.scale.set(22, 1, 34); pond.position.set(PITCH - 6, .12, -2); scene.add(pond
     const K = KINDS[kind];
     const geo = new THREE.PlaneGeometry(K.w, K.h).translate(0, K.h / 2, 0);
     const nrm = geo.attributes.normal; for (let q = 0; q < nrm.count; q++) nrm.setXYZ(q, up.x, up.y, up.z);
-    const tex = texLoader.load(`/textures/tree_${kind}.png`, t => { t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso; });
+    const tex = texLoader.load(`/textures/tree_${kind}.png?v=${TEX_V}`, t => { t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso; });
     const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: .5, side: THREE.DoubleSide, roughness: .92, transparent: false });
     const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: .45 });
     const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3(), ax = new THREE.Vector3(0, 1, 0);
