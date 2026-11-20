@@ -83,6 +83,7 @@ body:not(.nav-hidden) #navTab{display:none}
 #pad{position:fixed;right:max(16px, env(safe-area-inset-right,0px));bottom:calc(70px + env(safe-area-inset-bottom,0px));z-index:5;
   display:grid;grid-template-columns:repeat(2,64px);gap:8px;touch-action:none;user-select:none;-webkit-user-select:none}
 #pad button{height:64px;border-radius:50%;background:var(--panel);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);font-size:12px;padding:0}
+body:not(.flying) #pad .flyOnly{display:none}
 #pad button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 #joy[hidden],#pad[hidden],#navTab[hidden]{display:none}
 
@@ -232,7 +233,7 @@ body.riding #toast{top:calc(160px + env(safe-area-inset-top,0px))}
     <div class="rides" role="group" aria-label="탈것">
       <button type="button" data-ride="0" aria-pressed="true" disabled>걷기</button><button type="button" data-ride="1" aria-pressed="false" disabled>말</button>
       <button type="button" data-ride="2" aria-pressed="false" disabled>포르쉐</button><button type="button" data-ride="3" aria-pressed="false" disabled>AMG GT SUV</button>
-      <button type="button" data-ride="4" aria-pressed="false" disabled>시간여행카</button><button type="button" data-ride="5" aria-pressed="false" disabled>오토바이</button><button type="button" data-ride="6" aria-pressed="false" disabled>포뮬러</button>
+      <button type="button" data-ride="4" aria-pressed="false" disabled>시간여행카</button><button type="button" data-ride="5" aria-pressed="false" disabled>오토바이</button><button type="button" data-ride="6" aria-pressed="false" disabled>포뮬러</button><button type="button" data-ride="7" aria-pressed="false" disabled>용</button>
     </div>
     <button id="statusBtn" type="button" hidden>상태창 보기</button>
   </div>
@@ -266,7 +267,8 @@ body.riding #toast{top:calc(160px + env(safe-area-inset-top,0px))}
 <button id="navTab" type="button" aria-controls="panel" aria-expanded="false">☰ 메뉴</button>
 <div id="joy" hidden role="application" aria-label="이동 조이스틱 · 위 가속/앞으로, 아래 브레이크/뒤로, 좌우 방향"><span>조이스틱</span><i></i></div>
 <div id="pad" hidden><button type="button" id="padAtk">공격</button><button type="button" id="padSp">필살기</button>
-  <button type="button" id="padBoost">부스트</button><button type="button" id="padRide">탈것</button></div>
+  <button type="button" id="padBoost">부스트</button><button type="button" id="padRide">탈것</button>
+  <button type="button" id="padUp" class="flyOnly">상승</button><button type="button" id="padDown" class="flyOnly">하강</button></div>
 <div id="rideHud" hidden role="status" aria-label="계기판">
   <div class="dial">
     <svg viewBox="-66 -66 132 132" aria-hidden="true">
@@ -1104,15 +1106,18 @@ const HERO = {
   20: { color: '#ff8fd0', sp: '분홍 회오리', dur: 2.0 },
 };
 // rides: length in metres, top speed (m/s) normally and with Shift, acceleration (m/s²), braking, steering rate
+const DRAGON_WING = { y0: .5, x0: .12, z0: -.6, z1: .6 };
 const RIDES = {
   1: { f: 'horse', name: '말', len: 2.45, vmax: 9, boost: 16, acc: 4.2, brake: 8, rev: 1.5, vrev: 1.5, turn: 2.4, rider: true, horse: true, yaw: 0, gears: 0 },
   2: { f: 'porsche', wheelR: 0.35, name: '포르쉐 911 터보 S 카브리올레', open: true, len: 4.55, vmax: 50, boost: 64, acc: 12, brake: 16, rev: 4, vrev: 7, turn: 1.75, rider: false, yaw: Math.PI, gears: 8 },
   3: { f: 'amg', wheelR: 0.39, name: '메르세데스-AMG GT SUV (전기)', len: 5.1, vmax: 50, boost: 62, acc: 11.6, brake: 16, rev: 4, vrev: 7, turn: 1.45, rider: false, yaw: Math.PI, gears: 1, ev: true },
   4: { f: 'dmc', wheelR: 0.32, name: '시간여행 걸윙카', len: 4.27, vmax: 36, boost: 48, acc: 6.4, brake: 13, rev: 4, vrev: 7, turn: 1.6, rider: false, yaw: 0, gears: 5, timeJump: true },
   6: { f: 'racer', wheelR: .36, name: 'AI 포뮬러 2040', open: true, seatX: 0, seatY: .42, ai: true, len: 5.4, vmax: 62, boost: 86, acc: 15, brake: 24, rev: 4, vrev: 6, turn: 1.55, rider: false, yaw: 0, gears: 8 },
+  7: { f: 'dragon', name: '용', len: 7.5, vmax: 24, boost: 50, acc: 7, brake: 9, rev: 1.2, vrev: 1.2, turn: 1.7, rider: true, dragon: true, fly: true, yaw: 0, gears: 0, seatH: .5, seatZ: .12 },
   5: { f: 'bike', wheelR: 0.33, name: 'V트윈 크루저', len: 2.45, vmax: 36, boost: 50, acc: 8.6, brake: 12, rev: 1, vrev: 1, turn: 2.1, rider: true, bike: true, yaw: Math.PI, gears: 6 },
 };
 let timeArmed = true; const aiSaid = {};
+let myAlt = 0, altV = 0, padUp = false, padDown = false;
 let rideKind = 0, lastRide = 2, rideV = 0, rideSteer = 0, rideAcc = 0, launchT0 = null, launchShown = false;
 const joy = { on: false, x: 0, y: 0 }; let boostHeld = false, navTimer = 0;
 let atkReady = 0, spReady = 0, soundOn = true, actx = null, eng = null, shakeT = -1e9, shakeA = 0, spLabel = '';
@@ -1311,7 +1316,7 @@ function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTi
 
 function sendPresence(force) {
   if (!room) return;
-  const p = { n: me.n, c: me.c, k: me.k, v: walking ? rideKind : 0, w: walking ? 1 : 0, x: Math.round(myPos.x * 100) / 100, z: Math.round(myPos.z * 100) / 100, r: Math.round(myRot * 100) / 100 };
+  const p = { n: me.n, c: me.c, k: me.k, v: walking ? rideKind : 0, w: walking ? 1 : 0, x: Math.round(myPos.x * 100) / 100, z: Math.round(myPos.z * 100) / 100, r: Math.round(myRot * 100) / 100, y: Math.round(myAlt * 10) / 10 };
   const key = JSON.stringify(p), now = performance.now();
   if (!force && (key === sentKey || now - lastSent < 90)) return;
   sentKey = key; lastSent = now; room.presence(p).catch(() => {});
@@ -1388,7 +1393,7 @@ function syncPeers(list) {
       const g = makeAvatar(color, name, false, k); g.position.set(clampX(pr.x), 0, clampZ(pr.z)); scene.add(g);
       v = { g, name, color, k, lastT: pr.t, bowStart: -1e9, danceStart: -1e9, r: Number(pr.r) || 0 }; peerViews.set(p.peer, v);
     }
-    v.tx = clampX(pr.x); v.tz = clampZ(pr.z); v.tr = Number.isFinite(pr.r) ? pr.r : 0; v.s = typeof pr.s === 'string' ? pr.s : null;
+    v.tx = clampX(pr.x); v.tz = clampZ(pr.z); v.ty = Number.isFinite(pr.y) ? Math.max(0, Math.min(260, pr.y)) : 0; v.tr = Number.isFinite(pr.r) ? pr.r : 0; v.s = typeof pr.s === 'string' ? pr.s : null;
     if (pr.a === 'bow' && pr.t !== v.lastT) { v.lastT = pr.t; v.bowStart = performance.now(); }
     if (pr.a === 'dance' && pr.t !== v.lastT) { v.lastT = pr.t; v.danceStart = performance.now(); }
     if ((pr.a === 'atk' || pr.a === 'sp') && pr.t !== v.lastT) { v.lastT = pr.t; startAttack(v.g, pr.a, k, color); }
@@ -1413,7 +1418,7 @@ function updatePeers(dt, now) {
   for (const v of peerViews.values()) {
     const g = v.g, dx = v.tx - g.position.x, dz = v.tz - g.position.z, moving = Math.hypot(dx, dz) > .05;
     g.visible = !tourOn || (!!tourSpot && v.s === tourSpot.id); // inside a photo, show only people standing in the same photo
-    g.position.x += dx * a; g.position.z += dz * a;
+    g.position.x += dx * a; g.position.z += dz * a; g.position.y += ((v.ty || 0) - g.position.y) * a;
     let dr = v.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * a;
     g.userData.body.position.y = moving && !g.userData.model3d ? Math.abs(Math.sin(now / 140)) * .08 : 0;
     if (g.userData.mount !== v.ride) setMount(g, v.ride);
@@ -1486,7 +1491,7 @@ renderStatus();
 
 // movement input
 addEventListener('keydown', e => { if (e.target.closest && e.target.closest('input')) return;
-  const k = e.key.toLowerCase(); if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) { keys[k] = true; if (walking && k.startsWith('arrow')) e.preventDefault(); } });
+  const k = e.key.toLowerCase(); if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift', ' ', 'c'].includes(k)) { keys[k] = true; if (walking && (k.startsWith('arrow') || (k === ' ' && RIDES[rideKind]?.fly))) e.preventDefault(); } });
 addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 let downAt = null;
@@ -2338,6 +2343,11 @@ padBoost.addEventListener('pointerup', () => boostOn(false)); padBoost.addEventL
 document.getElementById('padAtk').addEventListener('click', () => doAttack('atk'));
 document.getElementById('padSp').addEventListener('click', () => doAttack('sp'));
 document.getElementById('padRide').addEventListener('click', () => setRide(rideKind ? 0 : lastRide));
+for (const [id, set] of [['padUp', v => { padUp = v; }], ['padDown', v => { padDown = v; }]]) {
+  const b = document.getElementById(id), on = v => { set(v); b.classList.toggle('on', v); };
+  b.addEventListener('pointerdown', e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (_) { /* synthetic pointer */ } on(true); });
+  b.addEventListener('pointerup', () => on(false)); b.addEventListener('pointercancel', () => on(false));
+}
 function showControls(on) { joyEl.hidden = padEl.hidden = !on; if (!on) { joyEnd(); boostOn(false); } }
 // the settings panel tucks away to the left while you move; the tab on the left edge brings it back
 const navTab = document.getElementById('navTab'), panelEl = document.getElementById('panel');
@@ -2365,15 +2375,16 @@ function loadRide(k) {
     obj.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(obj); const c = box.getCenter(new THREE.Vector3());
     obj.position.set(-c.x, -box.min.y, -c.z);
     obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true;
-      if (R.horse) matte(o.material, .02); else for (const m of [].concat(o.material)) { if (m.emissive) { m.emissive.setRGB(0, 0, 0); m.emissiveMap = null; }
+      if (R.horse || R.dragon) matte(o.material, .02); else for (const m of [].concat(o.material)) { if (m.emissive) { m.emissive.setRGB(0, 0, 0); m.emissiveMap = null; }
         // generated PBR maps read most of the body as metal, which turns the paint into a mirror: keep metal for chrome only, add a little gloss
         if (R.bike) { m.metalness = .55; m.roughness = .9; m.envMapIntensity = .55; }
         else { m.normalMap = null; m.metalness = .25; m.roughness = .55; m.envMapIntensity = .6; } // the generated normal map is noise: drop it, keep a satin clearcoat look
         m.needsUpdate = true; }
-      if (!R.horse && !R.bike) smoothNormals(o.geometry, .62); } });
+      if (!R.horse && !R.bike && !R.dragon) smoothNormals(o.geometry, .62); } });
     const wrap = new THREE.Group(); wrap.add(obj); wrap.userData.h = box.max.y - box.min.y;
     if (R.wheelR) { try { splitWheels(obj, wrap, R); } catch (e) { console.warn('wheels', e); } }
     if (R.horse) { try { splitLegs(obj, wrap, wrap.userData.h); } catch (e) { console.warn('legs', e); } }
+    if (R.dragon) { try { splitWings(obj, wrap, wrap.userData.h); } catch (e) { console.warn('wings', e); } }
     res(wrap);
   }, undefined, () => res(null)));
   return rideCache[k];
@@ -2384,7 +2395,8 @@ function setMount(g, kind, force) {
   u.mount = kind; u.body.visible = true; u.label.position.y = 2.15;
   if (!kind || u.vehicle) return;
   loadRide(kind).then(p => { if (!p || u.mount !== kind || u.vehicle) return; const v = p.clone(true);
-    v.userData.wheels = []; v.userData.legs = []; v.traverse(o => { if (o.userData.spinR) v.userData.wheels.push(o); if (o.userData.leg !== undefined) v.userData.legs.push(o); });
+    v.userData.wheels = []; v.userData.legs = []; v.userData.wings = [];
+    v.traverse(o => { if (o.userData.spinR) v.userData.wheels.push(o); if (o.userData.leg !== undefined) v.userData.legs.push(o); if (o.userData.wing) v.userData.wings.push(o); });
     u.vehicle = v; g.add(v); });
 }
 function rideVisual(g, now, speed, accel) {
@@ -2396,8 +2408,8 @@ function rideVisual(g, now, speed, accel) {
   const laRaw = THREE.MathUtils.clamp(accel || (speed - (u._rvV ?? speed)) / dt, -25, 25); u._rvV = speed;
   const lp = 1 - Math.exp(-dt / .18); u._la = (u._la || 0) + (laRaw - (u._la || 0)) * lp; const la = u._la;
   if (u.reins && !(R && R.horse)) u.reins.forEach(r => { r.visible = false; });
-  if (!R) { u.body.rotation.z = 0; u.body.position.x = 0; u.susp = null; return; }
-  u.body.position.x = R.open ? (R.seatX ?? .36) : 0; // open car: the driver sits on the left (single-seaters: centre)
+  if (!R) { u.body.rotation.z = 0; u.body.position.x = 0; u.body.position.z = 0; u.susp = null; return; }
+  u.body.position.z = 0; u.body.position.x = R.open ? (R.seatX ?? .36) : 0; // open car: the driver sits on the left (single-seaters: centre)
   const h = v ? v.userData.h : (R.rider ? 2 : 1.3), sp = Math.abs(speed);
   u._lat = (u._lat || 0) + (THREE.MathUtils.clamp(speed * dyaw / dt, -14, 14) - (u._lat || 0)) * lp;
   const lat = u._lat; // centripetal acceleration m/s² (left turn > 0), smoothed
@@ -2411,6 +2423,18 @@ function rideVisual(g, now, speed, accel) {
     if (v) { v.position.y = bob + .035 * f; v.rotation.x = Math.sin(ph) * .035 * f; v.rotation.z = S.r; gallop(v, ph, f, sp); }
     u.body.visible = true; u.body.position.y += h * .66 + .1 - hipHeight(u) + bob * .6 + .035 * f; u.body.rotation.z = S.r; u.label.position.y = 2.15 + h * .66 - .9;
     if (v) reins(g, v, R, h); // leather from each fist to the bit
+  } else if (R.dragon) {
+    const air = g.position.y > .4, climb = g === myAvatar ? altV : 0;
+    spring(air ? THREE.MathUtils.clamp(-climb * .025 + sp * .002, -.35, .3) : 0, air ? THREE.MathUtils.clamp(-Math.atan(lat / 9.81) * 1.3, -.6, .6) : -Math.atan(lat / 9.81) * .3, 14, 6);
+    const rate = air ? (climb > 2 ? 2.6 : sp > 30 ? .9 : 1.7) : sp > .2 ? .8 : 0;
+    u.flap = ((u.flap || 0) + rate * dt) % 1; const ph = u.flap * Math.PI * 2;
+    u.wAmp = (u.wAmp || 0) + ((air ? (sp > 30 && climb < 2 ? .35 : .75) : .08) - (u.wAmp || 0)) * Math.min(1, dt * 3);
+    const lift = air ? -Math.sin(ph) * .18 * u.wAmp : Math.abs(Math.sin(ph * 2)) * .05;
+    if (v) { v.position.y = lift; v.rotation.x = S.p; v.rotation.z = S.r;
+      for (const w of v.userData.wings || []) w.rotation.z = w.userData.side * (Math.sin(ph) * u.wAmp + (air ? .1 : -.05)); }
+    const seat = h * (R.seatH ?? .5);
+    u.body.visible = true; u.body.position.y += seat - hipHeight(u) + lift; u.body.position.z = R.len * (R.seatZ ?? 0); u.body.rotation.z = S.r; u.body.rotation.x = S.p;
+    u.label.position.y = 2.15 + seat;
   } else if (R.bike) { // a two-wheeler leans into the turn by atan(a_lat / g) and lifts its front under hard power
     const lean = THREE.MathUtils.clamp(-Math.atan(lat / 9.81), -.75, .75);
     const pitch = la > 5 && sp < 14 ? -Math.min(.32, (la - 5) * .06) : THREE.MathUtils.clamp(-la * .004, -.05, .05);
@@ -2517,6 +2541,32 @@ function rollWheels(v, speed, dt, dyaw) {
   for (const w of ws) { w.rotation.x += speed * dt / w.userData.spinR; const pv = w.parent; if (pv.userData.steer) pv.rotation.y += (steer - pv.rotation.y) * Math.min(1, dt * 10); }
 }
 // horse legs: everything below the belly, split into four by side and front/back, each hinged at the shoulder or hip
+function splitWings(obj, wrap, h) {
+  wrap.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(wrap.matrixWorld).invert(), v = new THREE.Vector3();
+  const meshes = []; obj.traverse(o => { if (o.isMesh && o.geometry.index) meshes.push(o); });
+  const loc = meshes.map(m => { const M = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld), pa = m.geometry.attributes.position, P = new Float32Array(pa.count * 3);
+    for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(M); P.set([v.x, v.y, v.z], i * 3); } return { m, M, P }; });
+  const W = DRAGON_WING; // fractions of the model's height, tuned to the generated mesh
+  const sideOf = (x, y, z) => (y > h * W.y0 && Math.abs(x) > h * W.x0 && z > h * W.z0 && z < h * W.z1) ? (x > 0 ? 1 : 0) : -1;
+  const acc = [{ y: 0, z: 0, n: 0 }, { y: 0, z: 0, n: 0 }];
+  for (const { P } of loc) for (let i = 0; i < P.length; i += 3) { const sd = sideOf(P[i], P[i + 1], P[i + 2]); if (sd >= 0 && Math.abs(P[i]) < h * (W.x0 + .08)) { acc[sd].y += P[i + 1]; acc[sd].z += P[i + 2]; acc[sd].n++; } }
+  const nodes = [0, 1].map(sd => { const a = acc[sd]; if (!a.n) return null; const n = new THREE.Group();
+    n.position.set((sd ? 1 : -1) * h * W.x0, a.y / a.n, a.z / a.n); n.userData.wing = true; n.userData.side = sd ? -1 : 1; wrap.add(n); return n; });
+  for (const { m, M, P } of loc) {
+    const g0 = m.geometry, idx = g0.index.array, n = g0.attributes.position.count, sid = new Int8Array(n);
+    for (let i = 0; i < n; i++) sid[i] = sideOf(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+    const body = [], wt = [[], []];
+    for (let t = 0; t < idx.length; t += 3) { const a = sid[idx[t]], b = sid[idx[t + 1]], c = sid[idx[t + 2]];
+      if (a >= 0 && a === b && b === c && nodes[a]) wt[a].push(idx[t], idx[t + 1], idx[t + 2]); else body.push(idx[t], idx[t + 1], idx[t + 2]); }
+    for (const sd of [0, 1]) { if (!wt[sd].length) continue;
+      const geo = g0.clone(); geo.setIndex(wt[sd]);
+      const piece = new THREE.Mesh(geo, m.material); piece.castShadow = piece.receiveShadow = true;
+      // place the piece in wrap space, then re-parent it under the hinge
+      piece.applyMatrix4(M); piece.position.sub(nodes[sd].position); nodes[sd].add(piece); }
+    g0.setIndex(body);
+  }
+}
 function splitLegs(obj, wrap, h) {
   // Each leg is cut below the belly and again at the knee (front) / hock (hind): an upper piece hinged at the shoulder or hip,
   // and a lower piece (cannon + hoof) hinged at the joint and parented to the upper one, so the leg can fold while it swings.
@@ -2648,7 +2698,7 @@ function buildGauge(R) {
       t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', '7.5'); t.setAttribute('fill', 'rgba(255,240,220,.6)'); t.textContent = v; g.append(t); }
   }
   document.getElementById('arcTrack').setAttribute('stroke-dasharray', `${ARC} 999`);
-  document.getElementById('hudRpmLab').textContent = R.horse ? '걸음' : R.ev ? '출력' : 'RPM';
+  document.getElementById('hudRpmLab').textContent = R.fly ? '날갯짓' : R.horse ? '걸음' : R.ev ? '출력' : 'RPM';
   document.getElementById('hudTop').textContent = `최고 ${Math.round(R.boost * 3.6)}`;
   setGauge(R, 0, false);
 }
@@ -2660,7 +2710,7 @@ function setGauge(R, sp, thr) {
   document.getElementById('arcFill').setAttribute('stroke-dasharray', `${ARC * f} 999`);
   document.getElementById('needle').setAttribute('transform', `rotate(${135 + 270 * f})`);
   let rpm;
-  if (R.horse) rpm = Math.min(1, sp / R.boost);
+  if (R.horse || R.fly) rpm = Math.min(1, sp / R.boost);
   else if (R.ev) rpm = thr ? .35 + .65 * (1 - Math.min(1, sp / R.boost) * .6) : .08;
   else { const span = R.boost / R.gears, gear = Math.min(R.gears - 1, Math.floor(sp / span)); rpm = sp < .3 ? .1 : .22 + .78 * Math.min(1, (sp - gear * span) / span); }
   document.getElementById('hudBar').style.width = (rpm * 100).toFixed(1) + '%';
@@ -2669,16 +2719,18 @@ function setRide(k) {
   k = RIDES[k] ? k : 0;
   if (k && (!walking || tourOn)) { if (tourOn) toast('실사 사진 속에서는 탈 수 없어요'); return; }
   if (k === rideKind) return;
+  if (myAlt > 0) { camera.position.y -= myAlt; myAlt = 0; altV = 0; myAvatar.position.y = 0; } // getting off in the air: the dragon sets you down first
   rideKind = k; if (k) lastRide = k; rideV = 0; rideSteer = 0; launchT0 = null; launchShown = false; dest = null; destMark.visible = false;
   myAvatar.userData.atk = k >= 2 ? null : myAvatar.userData.atk;
   setMount(myAvatar, k);
   document.querySelectorAll('[data-ride]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.ride) === k)));
-  document.getElementById('rideHud').hidden = !k; document.body.classList.toggle('riding', !!k);
+  document.getElementById('rideHud').hidden = !k; document.body.classList.toggle('riding', !!k); document.body.classList.toggle('flying', !!(k && RIDES[k].fly));
   if (k) {
     setNav(false);
-    document.getElementById('hudName').textContent = RIDES[k].name; document.getElementById('hudLaunch').textContent = RIDES[k].horse ? '' : '0→100 측정 준비';
+    document.getElementById('hudName').textContent = RIDES[k].name; document.getElementById('hudLaunch').textContent = RIDES[k].horse || RIDES[k].fly ? '' : '0→100 측정 준비';
     buildGauge(RIDES[k]);
-    controls.maxDistance = 140; toast(`${RIDES[k].name}에 탔어요 · W 가속 · S 브레이크 · A/D 핸들 · Shift 부스트 · E 내리기`);
+    controls.maxDistance = RIDES[k].fly ? 400 : 140;
+    toast(RIDES[k].fly ? `${RIDES[k].name}에 탔어요 · W 앞으로 · A/D 방향 · Space 상승 · C 하강 · Shift 부스트 · E 내리기` : `${RIDES[k].name}에 탔어요 · W 가속 · S 브레이크 · A/D 핸들 · Shift 부스트 · E 내리기`);
   } else myAvatar.userData.body.visible = true;
   engine(k >= 2);
   sendPresence(true);
@@ -2704,20 +2756,29 @@ function updateRide(dt, now) {
   rideV += acc * dt; if (!thr && !brk && Math.abs(rideV) < .2) rideV = 0;
   rideAcc = acc;
   rideSteer += (st - rideSteer) * Math.min(1, dt * 6);
-  const grip = Math.min(1, Math.abs(rideV) / 3) / (1 + Math.abs(rideV) / 40);
+  const grip = R.fly && myAlt > .5 ? Math.max(.55, Math.min(1, Math.abs(rideV) / 3)) / (1 + Math.abs(rideV) / 60) : Math.min(1, Math.abs(rideV) / 3) / (1 + Math.abs(rideV) / 40);
   myRot += rideSteer * R.turn * grip * (rideV < 0 ? -1 : 1) * dt;
   const nx = myPos.x + Math.sin(myRot) * rideV * dt, nz = myPos.z + Math.cos(myRot) * rideV * dt, bx = clampX(nx), bz = clampZ(nz);
-  const [cx, cz, hit] = moveTry(myPos.x, myPos.z, bx, bz);
+  // above the city roofs (27 m) nothing blocks a dragon, except the basilica itself until it is clear of the nave roof
+  const overChurch = (x, z) => insideAt(x, z) || insideAt(x + 3, z) || insideAt(x - 3, z) || insideAt(x, z + 3) || insideAt(x, z - 3);
+  const [cx, cz, hit] = R.fly && myAlt > 32 ? (myAlt > 62 || !overChurch(bx, bz) ? [bx, bz, 0] : [myPos.x, myPos.z, 2]) : moveTry(myPos.x, myPos.z, bx, bz);
+  if (R.fly) { // Space / C (or the pad) climb and descend; the dragon hovers wherever you let go
+    const up = (keys[' '] || padUp ? 1 : 0) - (keys.c || padDown ? 1 : 0), want = up * (boosting ? 20 : 12);
+    altV += (want - altV) * Math.min(1, dt * 3);
+    const prev = myAlt; myAlt = THREE.MathUtils.clamp(myAlt + altV * dt, 0, insideAt(myPos.x, myPos.z) && prev < 40 ? 30 : 260); if (myAlt <= 0 && altV < 0) altV = 0;
+    camera.position.y += myAlt - prev;
+  }
   if (bx !== nx || bz !== nz || hit === 2) { if (Math.abs(rideV) > 8) { toast('쾅! 부딪혔어요'); shake(.6); sfx('boom', .5); sparksFx(cx, .6, cz, '#ffd27a', 30, 4); } rideV *= -.15; }
   else if (hit === 1) { rideV *= Math.pow(.25, dt); if (Math.abs(rideV) > 10 && Math.random() < dt * 8) sparksFx(cx, .5, cz, '#ffd27a', 10, 3); } // scraping along a wall
   vDelta.set(cx - myPos.x, 0, cz - myPos.z); myPos.x = cx; myPos.z = cz; camera.position.add(vDelta);
   if (Math.abs(rideV) > 2 && !tween) { // chase camera settles in behind
     const dist = (R.rider ? 6.5 : 8.5) + Math.abs(rideV) * .07, dir = rideV >= 0 ? 1 : -1;
-    _cam.set(myPos.x - Math.sin(myRot) * dist * dir, (R.rider ? 3.6 : 3) + Math.abs(rideV) * .02, myPos.z - Math.cos(myRot) * dist * dir);
+    const fk = R.fly ? 1.7 : 1;
+    _cam.set(myPos.x - Math.sin(myRot) * dist * dir * fk, (R.rider ? 3.6 : 3) * fk + Math.abs(rideV) * .02 + (R.fly ? myAlt : 0), myPos.z - Math.cos(myRot) * dist * dir * fk);
     camera.position.lerp(_cam, 1 - Math.exp(-dt * 2.4));
   }
-  if (!tween) controls.target.set(myPos.x, R.rider ? 2 : 1.2, myPos.z);
-  myAvatar.position.copy(myPos); myAvatar.rotation.y = myRot;
+  if (!tween) controls.target.set(myPos.x, (R.rider ? 2 : 1.2) + (R.fly ? myAlt + 1.5 : 0), myPos.z);
+  myAvatar.position.copy(myPos); myAvatar.position.y = R.fly ? myAlt : 0; myAvatar.rotation.y = myRot;
   const b = myAvatar.userData.body; b.position.y = 0; b.rotation.x = 0; b.rotation.y = 0;
   animate3D(myAvatar, false, dt, false);
   postPose(myAvatar, now, rideV, rideAcc);
@@ -2727,14 +2788,14 @@ function updateRide(dt, now) {
   setGauge(R, sp, thr);
   document.getElementById('hudGear').textContent = R.gears
     ? (rideV < -.3 ? 'R' : sp < .3 ? (R.ev ? 'P' : 'N') : R.ev ? 'D' : `${Math.min(R.gears, 1 + Math.floor(sp / (R.boost / R.gears)))}`)
-    : (sp < .4 ? '정지' : sp < 2.5 ? '평보' : sp < 6 ? '속보' : sp < 11 ? '구보' : '습보');
+    : R.fly ? (myAlt > .5 ? `고도 ${Math.round(myAlt)}m` : '지상') : (sp < .4 ? '정지' : sp < 2.5 ? '평보' : sp < 6 ? '속보' : sp < 11 ? '구보' : '습보');
   if (sp < .3) { launchT0 = thr ? performance.now() : null; if (!thr && launchShown) launchShown = false; }
   else if (launchT0 && !launchShown && sp >= 27.78) { launchShown = true; document.getElementById('hudLaunch').textContent = `0→100 ${((performance.now() - launchT0) / 1000).toFixed(1)}초`; }
   engineUpdate(R, rideV, thr);
   if (R.ai) { const lines = [[boosting && sp > 5, 'boost', 'AI 코파일럿: 부스트 모드 가동'], [sp * 3.6 > 300, 'v300', 'AI 코파일럿: 시속 300km 돌파'], [Math.abs(rideSteer) > .8 && sp > 30, 'turn', 'AI 코파일럿: 코너링 보조 작동']];
     for (const [cond, key, msg] of lines) { if (cond && !aiSaid[key]) { aiSaid[key] = true; toast(msg); } else if (!cond && aiSaid[key] && Math.random() < dt * .2) aiSaid[key] = false; } }
   if (R.timeJump) { if (!timeArmed && sp < 30) timeArmed = true; else if (timeArmed && sp >= 39.34) { timeArmed = false; timeJump(); } }
-  setInside(insideAt(myPos.x, myPos.z));
+  setInside(myAlt < 20 && insideAt(myPos.x, myPos.z));
   sendPresence(false);
 }
 
