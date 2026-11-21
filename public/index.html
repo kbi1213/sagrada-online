@@ -634,6 +634,8 @@ const PITCH = 133.3, S = 113.3, CH = 15;
 // the sky route rises out of the west park: tower top garden at 420 m, floating temple at 650 m, the white room is a pocket space
 const SKY = { x: -PITCH, z: 0, top: 420, temple: 650, room: 1600, rTop: 14, rTemple: 42, door: { x: -PITCH + 27, z: 0 } };
 let inChamber = false;
+// the EDM club sits in the east park, between the pond and the street
+const CLUB = { x: PITCH + 37, z: 4, w: 30, d: 44, h: 14, door: 5, stageD: 6 };
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(5000, 5000), asphaltMat);
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 function octShape(s, c) { const h = s / 2, sh = new THREE.Shape();
@@ -654,6 +656,7 @@ pond.scale.set(22, 1, 34); pond.position.set(PITCH - 6, .12, -2); scene.add(pond
   while (n < 150 && guard++ < 5000) {
     const side = n % 2 ? 1 : -1, x = side * PITCH + rr(-50, 50), z = rr(-50, 50);
     if (Math.hypot(x - SKY.x, z - SKY.z) < 16) continue;
+    if (Math.abs(x - CLUB.x) < CLUB.w / 2 + 5 && Math.abs(z - CLUB.z) < CLUB.d / 2 + 5) continue;
     if (side > 0 && ((x - (PITCH - 6)) / 26) ** 2 + ((z + 2) / 38) ** 2 < 1) continue;
     if (Math.abs(Math.abs(x) - PITCH) + Math.abs(z) > 85) continue;
     const r = rand(); spots[r < .55 ? 'pine' : r < .8 ? 'cypress' : 'plane'].push([x, z, rr(.8, 1.2), rr(0, Math.PI)]); n++;
@@ -1357,6 +1360,7 @@ const clampX = x => Math.min(BOUNDS.x1, Math.max(BOUNDS.x0, x)), clampZ = z => M
 // city blocks are solid: chamfered squares of side S every PITCH metres (the basilica block and the two parks are open)
 function blockedAt(x, z, pad = .7) {
   if (Math.hypot(x - SKY.x, z - SKY.z) < 8.5 + pad) return true;
+  if (clubBlocked(x, z, pad)) return true;
   const i = Math.round(x / PITCH), j = Math.round(z / PITCH);
   if (Math.abs(i) > 6 || Math.abs(j) > 6 || (j === 0 && Math.abs(i) <= 1)) return false;
   const dx = Math.abs(x - i * PITCH), dz = Math.abs(z - j * PITCH), h = S / 2 + pad;
@@ -2779,7 +2783,266 @@ document.getElementById('kaleBtn').addEventListener('click', () => { setKale(!ka
 document.getElementById('kaleNext').addEventListener('click', () => { setKaleStyle(kaleIdx + 1); toast('무늬: ' + KALE[kaleIdx].name); });
 addEventListener('keydown', e => { if (e.target.closest && e.target.closest('input, textarea')) return; if (e.key.toLowerCase() !== 'k' || e.repeat) return;
   if (e.shiftKey && kaleOn) { setKaleStyle(kaleIdx + 1); toast('무늬: ' + KALE[kaleIdx].name); } else { setKale(!kaleOn); toast(kaleOn ? '만화경 하늘을 켰습니다 · Shift+K로 무늬 바꾸기' : '만화경 하늘을 껐습니다'); } });
-setKaleStyle(kaleIdx); setKale(kaleOn); if (/[?&]debug=1/.test(location.search)) window.__kale = { kaleU, kaleDome };
+setKaleStyle(kaleIdx); setKale(kaleOn); if (/[?&]debug=1/.test(location.search)) window.__kale = { kaleU, kaleDome, get club() { return { clubFx, inClub, CLUB, clubAudio, actx }; } };
+
+
+// ---------- NEON PULSE: an EDM club in the east park, next to the pond ----------
+// Outside: a black box with neon edges, a sign over the door and lasers raking the sky. Inside: a robot DJ behind the booth,
+// a wall-sized LED screen (robot face, tunnel, spectrum, dancing robots), sweeping laser fans, a mirror ball, an LED dance floor
+// and a synthesized 128 BPM track that builds and drops. Everything runs off one beat clock so light and sound hit together.
+const clubGrp = new THREE.Group(); scene.add(clubGrp);
+const clubFx = { lasers: [], skyLasers: [], cones: [], edges: [], robots: [], sparkles: [] };
+const CLUB_BPM = 128, CLUB_SPB = 60 / CLUB_BPM, clubT0 = performance.now();
+let inClub = false, clubNear = false, clubBuilt = false, clubHintAt = -1e9;
+const clubBeat = now => (now - clubT0) / 1000 / CLUB_SPB;
+// 40-bar loop: intro 8, build 8, drop 16, break 8
+function clubSection(beat) { const bar = Math.floor(beat / 4) % 40; return bar < 8 ? 'intro' : bar < 16 ? 'build' : bar < 32 ? 'drop' : 'break'; }
+const beamTex = (() => { const c = cv(8, 64), x = c.getContext('2d'), g = x.createLinearGradient(0, 0, 8, 0);
+  g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 8, 64); return new THREE.CanvasTexture(c); })();
+// a beam: two crossed thin planes running from the emitter along +z for length 1 (scale.z sets the length)
+const beamGeo = (() => { const a = new THREE.PlaneGeometry(1, 1).translate(0, .5, 0).rotateX(Math.PI / 2), b = a.clone().rotateZ(Math.PI / 2);
+  const g = new THREE.BufferGeometry(), pa = a.attributes.position.array, pb = b.attributes.position.array, ua = a.attributes.uv.array, ia = a.index.array, n = a.attributes.position.count;
+  g.setAttribute('position', new THREE.Float32BufferAttribute([...pa, ...pb], 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute([...ua, ...ua], 2));
+  g.setIndex([...ia, ...Array.from(ia, v => v + n)]); return g; })();
+function makeBeam(color, width, len) { const m = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ map: beamTex, color, transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  m.scale.set(width, width, len); m.rotation.order = 'YXZ'; m.frustumCulled = false; return m; }
+const NEON = ['#00f0ff', '#ff2bd6', '#39ff6a', '#ff3b30', '#7a5cff', '#ffe600'];
+function buildClub() {
+  if (clubBuilt) return; clubBuilt = true;
+  const { x: X, z: Z, w: W, d: D, h: H } = CLUB, E = X + W / 2, Wx = X - W / 2;
+  const box = (w, h, d, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; clubGrp.add(m); return m; };
+  // exterior shell (hidden from view, but still casting shadows, while you are inside so the near walls never block the camera)
+  const shellMat = new THREE.MeshStandardMaterial({ color: '#111018', roughness: .45, metalness: .5 });
+  const shell = [];
+  shell.push(box(W, H, .6, shellMat, X, H / 2, Z - D / 2), box(W, H, .6, shellMat, X, H / 2, Z + D / 2), box(.6, H, D, shellMat, E, H / 2, Z));
+  const gap = CLUB.door / 2; // west wall in two pieces around the door, plus a lintel
+  shell.push(box(.6, H, D / 2 - gap, shellMat, Wx, H / 2, Z - (D / 2 + gap) / 2), box(.6, H, D / 2 - gap, shellMat, Wx, H / 2, Z + (D / 2 + gap) / 2), box(.6, H - 4.2, CLUB.door, shellMat, Wx, 4.2 + (H - 4.2) / 2, Z));
+  shell.push(box(W + .6, .5, D + .6, shellMat, X, H + .25, Z));
+  clubFx.shell = shell;
+  // neon edge strips that pulse with the beat
+  const edge = (w, h, d, x, y, z, i) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ color: NEON[i % NEON.length], fog: false })); m.position.set(x, y, z); clubGrp.add(m); clubFx.edges.push(m); m.userData.i = i; return m; };
+  let ei = 0; const extFrom = clubFx.edges.length;
+  for (const sz of [-1, 1]) for (const sx of [-1, 1]) edge(.25, H + .6, .25, X + sx * (W / 2 + .2), (H + .6) / 2, Z + sz * (D / 2 + .2), ei++);
+  for (const sz of [-1, 1]) edge(W + .6, .25, .25, X, H + .55, Z + sz * (D / 2 + .2), ei++);
+  for (const sx of [-1, 1]) edge(.25, .25, D + .6, X + sx * (W / 2 + .2), H + .55, Z, ei++);
+  for (const y of [3, 6.5, 10]) edge(.12, .12, D + .4, Wx - .35, y, Z, ei++); // horizontal light bands on the facade
+  edge(.2, 4.4, .2, Wx - .4, 2.2, Z - gap - .1, 1); edge(.2, 4.4, .2, Wx - .4, 2.2, Z + gap + .1, 1); edge(.2, .2, CLUB.door + .4, Wx - .4, 4.35, Z, 0);
+  for (let i = extFrom; i < clubFx.edges.length; i++) clubFx.edges[i].userData.ext = true;
+  // the doorway: a glowing curtain you walk through
+  const curtain = new THREE.Mesh(new THREE.PlaneGeometry(CLUB.door, 4.2), new THREE.MeshBasicMaterial({ color: '#2a0838', transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false }));
+  curtain.position.set(Wx, 2.1, Z); curtain.rotation.y = Math.PI / 2; clubGrp.add(curtain); clubFx.curtain = curtain;
+  // sign over the door, both faces
+  const signC = cv(1024, 256), sg = signC.getContext('2d'); sg.fillStyle = '#05030a'; sg.fillRect(0, 0, 1024, 256);
+  sg.font = '900 150px system-ui, sans-serif'; sg.textAlign = 'center'; sg.textBaseline = 'middle';
+  for (const [b, c] of [[40, '#ff2bd6'], [18, '#00f0ff'], [0, '#ffffff']]) { sg.shadowColor = c; sg.shadowBlur = b; sg.fillStyle = c; sg.fillText('NEON PULSE', 512, 118); }
+  sg.shadowBlur = 0; sg.font = '600 40px system-ui, sans-serif'; sg.fillStyle = '#9ff7ff'; sg.fillText('EDM CLUB · 128 BPM · ROBOT DJ', 512, 214);
+  const signTex = new THREE.CanvasTexture(signC); signTex.encoding = THREE.sRGBEncoding;
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(16, 4), new THREE.MeshBasicMaterial({ map: signTex, fog: false }));
+  sign.position.set(Wx - .4, 7.4, Z); sign.rotation.y = -Math.PI / 2; clubGrp.add(sign); clubFx.sign = sign;
+  const roofSign = sign.clone(); roofSign.scale.setScalar(1.4); roofSign.position.set(X, H + 3.4, Z); roofSign.rotation.y = -Math.PI / 2; clubGrp.add(roofSign);
+  const roofSign2 = roofSign.clone(); roofSign2.rotation.y = Math.PI / 2; clubGrp.add(roofSign2);
+  // ---- inside ----
+  const inMat = new THREE.MeshStandardMaterial({ color: '#08070d', roughness: .8, side: THREE.BackSide });
+  const inner = new THREE.Mesh(new THREE.BoxGeometry(W - .8, H - .2, D - .8), inMat); inner.position.set(X, H / 2 - .05, Z); clubGrp.add(inner);
+  const darkFloor = new THREE.Mesh(new THREE.PlaneGeometry(W - .8, D - .8).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#0a0910', roughness: .4, metalness: .3 }));
+  darkFloor.position.set(X, .09, Z); darkFloor.receiveShadow = true; clubGrp.add(darkFloor);
+  // LED dance floor
+  const floorU = { t: { value: 0 }, kick: { value: 0 }, lvl: { value: 0 } };
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W - 11, D - 4).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({ uniforms: floorU,
+    vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `uniform float t, kick, lvl; varying vec2 vU;
+      vec3 hsv(float h, float s, float v){ vec3 k = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); return v * mix(vec3(1.0), k, s); }
+      float h21(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5); }
+      void main(){
+        vec2 g = vU * vec2(13.0, 21.0), id = floor(g), f = fract(g);
+        float edge = smoothstep(.0, .08, min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)));
+        float ring = sin(length(id - vec2(6.5, 10.5)) * .8 - t * 6.0) * .5 + .5;
+        float rnd = step(.72 - kick * .3, h21(id + floor(t * 2.133)));
+        float on = max(ring * ring * lvl, rnd * (.35 + .65 * lvl));
+        vec3 c = hsv(fract(id.x * .05 + id.y * .03 + t * .07), .9, 1.0) * on * (.35 + kick * .9);
+        gl_FragColor = linearToOutputTexel(vec4(c * edge + vec3(.015), 1.0));
+      }` }));
+  floor.position.set(X - 5.5 + .5, .11, Z); clubGrp.add(floor); clubFx.floorU = floorU;
+  // stage, DJ booth, speaker stacks, podiums
+  const stageMat = new THREE.MeshStandardMaterial({ color: '#15131c', roughness: .35, metalness: .6 });
+  box(CLUB.stageD, 1.2, D - 1, stageMat, E - CLUB.stageD / 2 - .4, .6, Z);
+  edge(.15, .15, D - 1.2, E - CLUB.stageD - .4, 1.2, Z, 0);
+  const booth = box(2, 1.3, 9, new THREE.MeshStandardMaterial({ color: '#0c0c12', roughness: .3, metalness: .7 }), E - CLUB.stageD + 1.6, 1.2 + .65, Z);
+  const boothFace = new THREE.Mesh(new THREE.PlaneGeometry(9, 1.2), new THREE.MeshBasicMaterial({ color: '#00f0ff', fog: false, transparent: true, opacity: .8 }));
+  boothFace.position.set(booth.position.x - 1.01, booth.position.y, Z); boothFace.rotation.y = -Math.PI / 2; clubGrp.add(boothFace); clubFx.boothFace = boothFace;
+  for (const sz of [-1, 1]) { box(2.2, 6, 3, stageMat, E - 2.2, 1.2 + 3, Z + sz * (D / 2 - 3));
+    for (let k = 0; k < 3; k++) { const cone = new THREE.Mesh(new THREE.CircleGeometry(.75, 24), new THREE.MeshBasicMaterial({ color: '#1d1b26' })); cone.position.set(E - 3.32, 2.6 + k * 1.8, Z + sz * (D / 2 - 3)); cone.rotation.y = -Math.PI / 2; clubGrp.add(cone); clubFx.robots.push({ spk: cone, k }); } }
+  for (const sz of [-1, 1]) { box(3.2, 1.6, 3.2, stageMat, X - 3, .8, Z + sz * 15); edge(.12, .12, 3.3, X - 4.65, 1.62, Z + sz * 15, 2 + (sz > 0 ? 1 : 0)); }
+  // LED wall over the stage
+  const ledC = cv(512, 256), ledTex = new THREE.CanvasTexture(ledC); ledTex.encoding = THREE.sRGBEncoding; ledTex.minFilter = THREE.LinearFilter;
+  const led = new THREE.Mesh(new THREE.PlaneGeometry(D - 4, 11), new THREE.MeshBasicMaterial({ map: ledTex, fog: false }));
+  led.position.set(E - .55, 2.2 + 5.5 + .6, Z); led.rotation.y = -Math.PI / 2; clubGrp.add(led);
+  clubFx.led = { c: ledC, x: ledC.getContext('2d'), tex: ledTex, last: 0 };
+  // mirror ball
+  const mbC = cv(256, 128), mb = mbC.getContext('2d');
+  for (let i = 0; i < 32; i++) for (let j = 0; j < 16; j++) { const v = 90 + Math.random() * 165; mb.fillStyle = `rgb(${v},${v},${v + 10})`; mb.fillRect(i * 8, j * 8, 7, 7); }
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(1.1, 24, 16), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(mbC) }));
+  ball.position.set(X - 4, H - 2.4, Z); clubGrp.add(ball); clubFx.ball = ball;
+  { const rodM = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, 1.6), new THREE.MeshBasicMaterial({ color: '#333' })); rodM.position.set(X - 4, H - .9, Z); clubGrp.add(rodM); }
+  for (let i = 0; i < (LOW ? 24 : 60); i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#ffffff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+    s.userData = { a: Math.random() * Math.PI * 2, y: Math.random(), r: 6 + Math.random() * 7, ph: Math.random() * 6 }; s.scale.setScalar(.35); clubGrp.add(s); clubFx.sparkles.push(s); }
+  // laser emitters along the top of the LED wall, fanning out over the crowd
+  for (let e = 0; e < 5; e++) { const g = new THREE.Group(); g.position.set(E - 1.4, H - 1.6, Z + (e - 2) * 8.5); clubGrp.add(g);
+    const fan = [];
+    for (let b = 0; b < (LOW ? 5 : 8); b++) { const m = makeBeam(NEON[e % NEON.length], .09, 34); m.userData.b = b; g.add(m); fan.push(m); }
+    const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: NEON[e % NEON.length], blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false })); dot.scale.setScalar(1.2); g.add(dot);
+    clubFx.lasers.push({ g, fan, e, dot }); }
+  // haze beams: wide soft cones from the ceiling truss
+  for (let i = 0; i < 6; i++) { const m = new THREE.Mesh(new THREE.ConeGeometry(2.2, 12, 24, 1, true).translate(0, -6, 0), new THREE.MeshBasicMaterial({ color: NEON[(i + 2) % NEON.length], transparent: true, opacity: .12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    m.position.set(X - 9 + (i % 3) * 7, H - .6, Z + (i < 3 ? -9 : 9)); clubGrp.add(m); m.userData.i = i; clubFx.cones.push(m); }
+  // lasers raking the sky from the roof corners (seen from all over the city)
+  for (const [sx, sz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) { const m = makeBeam(NEON[(sx + 1) + (sz + 1) / 2], .9, 520); m.position.set(X + sx * (W / 2 - 1), H + .6, Z + sz * (D / 2 - 1)); clubGrp.add(m); m.userData.s = [sx, sz]; clubFx.skyLasers.push(m); }
+  // robot DJ behind the booth and two dancing robots on the podiums (reusing the ride models, loaded only when you come near)
+  const place = (k, height, x, y0, z, rot, dancer) => loadRide(k).then(wrap => { if (!wrap) return;
+    const r = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(wrap) : wrap.clone(true); r.traverse(o => { if (o.userData && o.userData.flame) o.visible = false; });
+    r.scale.setScalar(height / (wrap.userData.h || height)); r.position.set(x, y0, z); r.rotation.y = rot; clubGrp.add(r);
+    clubFx.robots.push({ r, y0, rot, dancer }); });
+  place(12, 7.5, E - 3.6, 1.2, Z, -Math.PI / 2, false);
+  for (const sz of [-1, 1]) place(10, 4.2, X - 3, 1.6, Z + sz * 15, -Math.PI / 2, true);
+}
+// is (x,z) inside the club's walls?  -> used for walking collisions and for "you are in the club"
+function clubInside(x, z, pad = 0) { return Math.abs(x - CLUB.x) < CLUB.w / 2 - .6 - pad && Math.abs(z - CLUB.z) < CLUB.d / 2 - .6 - pad; }
+function clubBlocked(x, z, pad) {
+  const dx = x - CLUB.x, dz = z - CLUB.z, ox = CLUB.w / 2 + pad, oz = CLUB.d / 2 + pad;
+  if (Math.abs(dx) > ox || Math.abs(dz) > oz) return false;
+  if (dx > CLUB.w / 2 - CLUB.stageD - .4 - pad) return true;                          // the stage and booth
+  for (const sz of [-1, 1]) if (Math.abs(dx + 3) < 1.6 + pad && Math.abs(dz - sz * 15) < 1.6 + pad) return true; // podiums
+  if (clubInside(x, z, pad)) return false;
+  if (dx < 0 && Math.abs(dz) < CLUB.door / 2 - pad) return false;                       // the door
+  return true;
+}
+// ---- the LED wall: four scenes, switching every two bars ----
+function drawLed(now, beat, kick, sec) {
+  const L = clubFx.led, x = L.x, Wd = 512, Hd = 256, t = now / 1000;
+  const sc = Math.floor(beat / 8) % 4, hue = (t * 40) % 360;
+  x.fillStyle = '#04020a'; x.fillRect(0, 0, Wd, Hd);
+  if (sc === 0) { // robot face
+    const cx = 256, cy = 128 + Math.sin(beat * Math.PI) * 4;
+    x.strokeStyle = `hsl(${hue},100%,60%)`; x.lineWidth = 6; x.shadowColor = x.strokeStyle; x.shadowBlur = 18;
+    x.beginPath(); x.roundRect ? x.roundRect(cx - 120, cy - 95, 240, 190, 36) : x.rect(cx - 120, cy - 95, 240, 190); x.stroke();
+    x.beginPath(); x.moveTo(cx, cy - 95); x.lineTo(cx, cy - 122); x.stroke(); x.beginPath(); x.arc(cx, cy - 128, 8 + kick * 6, 0, 7); x.fillStyle = '#ff2bd6'; x.fill();
+    const blink = (beat % 16) > 15.6 ? .15 : 1;
+    x.fillStyle = '#00f0ff'; x.shadowColor = '#00f0ff'; x.shadowBlur = 30 * (.5 + kick);
+    for (const s of [-1, 1]) x.fillRect(cx + s * 55 - 32, cy - 35 - 16 * blink, 64, 32 * blink);
+    x.shadowBlur = 12; for (let i = 0; i < 12; i++) { const h = 6 + Math.abs(Math.sin(t * 9 + i * 1.7)) * (20 + kick * 26); x.fillStyle = `hsl(${(hue + i * 20) % 360},100%,60%)`; x.fillRect(cx - 90 + i * 15.5, cy + 45 - h / 2, 10, h); }
+  } else if (sc === 1) { // synth tunnel with a striped sun
+    x.shadowBlur = 0; const g = x.createLinearGradient(0, 0, 0, 128); g.addColorStop(0, '#16002e'); g.addColorStop(1, '#ff2bd6'); x.fillStyle = g; x.fillRect(0, 0, Wd, 128);
+    x.fillStyle = '#ffcf3a'; x.beginPath(); x.arc(256, 128, 70 + kick * 8, Math.PI, 0); x.fill();
+    x.fillStyle = '#04020a'; for (let i = 0; i < 6; i++) x.fillRect(180, 128 - 8 - i * 11, 152, 3 + i * .6);
+    x.strokeStyle = '#00f0ff'; x.lineWidth = 2; x.shadowColor = '#00f0ff'; x.shadowBlur = 10;
+    for (let i = -12; i <= 12; i++) { x.beginPath(); x.moveTo(256 + i * 8, 128); x.lineTo(256 + i * 60, 256); x.stroke(); }
+    for (let i = 0; i < 9; i++) { const k = ((i + (beat % 1)) / 9), y = 128 + Math.pow(k, 2.2) * 128; x.beginPath(); x.moveTo(0, y); x.lineTo(Wd, y); x.stroke(); }
+  } else if (sc === 2) { // spectrum
+    x.shadowBlur = 14; const n = 32;
+    for (let i = 0; i < n; i++) { const v = Math.abs(Math.sin(t * 5 + i * .45) * Math.cos(t * 2.3 + i * .2)) * (.5 + kick * .7) * (sec === 'drop' ? 1 : .6);
+      const h = 14 + v * 210; x.fillStyle = x.shadowColor = `hsl(${(i * 11 + hue) % 360},100%,58%)`; x.fillRect(8 + i * 15.7, 246 - h, 11, h); }
+    x.font = '900 46px system-ui,sans-serif'; x.textAlign = 'center'; x.fillStyle = '#fff'; x.shadowColor = '#ff2bd6'; x.shadowBlur = 24; x.fillText(sec === 'build' ? 'GET READY' : 'NEON PULSE', 256, 56);
+  } else { // three dancing robots
+    x.shadowBlur = 16;
+    for (let r = 0; r < 3; r++) { const cx = 110 + r * 146, by = 210, arm = Math.sin(beat * Math.PI + r) * .9, bob = Math.abs(Math.sin(beat * Math.PI)) * 10;
+      x.strokeStyle = x.shadowColor = NEON[(r + Math.floor(beat / 2)) % NEON.length]; x.lineWidth = 7; x.lineCap = 'round';
+      x.strokeRect(cx - 26, by - 120 - bob, 52, 60); x.strokeRect(cx - 20, by - 170 - bob, 40, 34);
+      x.fillStyle = '#fff'; x.fillRect(cx - 12, by - 158 - bob, 8, 8); x.fillRect(cx + 4, by - 158 - bob, 8, 8);
+      for (const s of [-1, 1]) { const a = s > 0 ? arm : -arm; x.beginPath(); x.moveTo(cx + s * 26, by - 110 - bob); x.lineTo(cx + s * (26 + 30 * Math.cos(a)), by - 110 - bob - 30 * Math.sin(a) - 10); x.lineTo(cx + s * (40 + 26 * Math.cos(a * 1.6)), by - 150 - bob - 20 * Math.sin(a)); x.stroke();
+        x.beginPath(); x.moveTo(cx + s * 12, by - 60 - bob); x.lineTo(cx + s * (16 + (s > 0 ? arm : -arm) * 6), by - 30); x.lineTo(cx + s * 18, by); x.stroke(); } }
+  }
+  if (kick > .75 && sec === 'drop') { x.fillStyle = `rgba(255,255,255,${(kick - .75) * 1.2})`; x.fillRect(0, 0, Wd, Hd); }
+  x.shadowBlur = 0; x.fillStyle = 'rgba(0,0,0,.25)'; for (let y = 0; y < Hd; y += 4) x.fillRect(0, y, Wd, 1); // scanlines
+  L.tex.needsUpdate = true;
+}
+// ---- the track: synthesized with Web Audio, scheduled a little ahead of time on the same clock as the lights ----
+const clubAudio = { out: null, lp: null, step: -1, base: 0 };
+const CHORDS = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]; // Am F C G (MIDI)
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+function clubAudioTick(now, vol, inside) {
+  const c = actx; if (!c || c.state !== 'running') return;
+  if (!clubAudio.out) { clubAudio.lp = c.createBiquadFilter(); clubAudio.lp.type = 'lowpass'; clubAudio.out = c.createGain(); clubAudio.out.gain.value = 0;
+    clubAudio.lp.connect(clubAudio.out).connect(c.destination); }
+  clubAudio.out.gain.setTargetAtTime(soundOn ? vol * .55 : 0, c.currentTime, .15);
+  clubAudio.lp.frequency.setTargetAtTime(inside ? 16000 : 420, c.currentTime, .2);
+  if (vol <= .001) { clubAudio.step = -1; return; }
+  const base = c.currentTime - (now - clubT0) / 1000, st = CLUB_SPB / 4;
+  if (clubAudio.step < 0) clubAudio.step = Math.ceil((c.currentTime - base) / st);
+  while (base + clubAudio.step * st < c.currentTime + .18) { clubPlayStep(c, clubAudio.step, base + clubAudio.step * st); clubAudio.step++; }
+}
+function clubPlayStep(c, i, t) {
+  const out = clubAudio.lp, s16 = i % 16, bar = Math.floor(i / 16) % 40, sec = bar < 8 ? 'intro' : bar < 16 ? 'build' : bar < 32 ? 'drop' : 'break', chord = CHORDS[Math.floor(bar / 2) % 4];
+  const env = (node, a, peak, d) => { node.gain.setValueAtTime(0, t); node.gain.linearRampToValueAtTime(peak, t + a); node.gain.exponentialRampToValueAtTime(.0008, t + a + d); };
+  const noise = (type, f, q, peak, d) => { const s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain(); s.buffer = noiseBuf(c); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
+    s.connect(fl).connect(g).connect(out); env(g, .002, peak, d); s.start(t, Math.random()); s.stop(t + d + .05); };
+  const osc = (type, f, peak, a, d, f2, lpf) => { const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + d * .5);
+    let n = o; if (lpf) { const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = lpf; fl.Q.value = 4; o.connect(fl); n = fl; } n.connect(g).connect(out); env(g, a, peak, d); o.start(t); o.stop(t + a + d + .05); };
+  const kickOn = sec !== 'break' && s16 % 4 === 0 && !(sec === 'build' && bar === 15 && s16 >= 8);
+  if (kickOn) osc('sine', 160, .9, .002, .32, 42);
+  if (sec !== 'intro' || bar >= 4) { if (s16 % 4 === 2) noise('highpass', 7500, .7, .18, .12); else if (sec === 'drop' && s16 % 2 === 1) noise('highpass', 9000, .7, .07, .04); }
+  if ((sec === 'drop' || sec === 'intro') && (s16 === 4 || s16 === 12)) noise('bandpass', 1700, .9, .35, .16);
+  if (sec === 'build') { const k = (bar - 8) / 8, every = k < .5 ? 4 : k < .85 ? 2 : 1; if (s16 % every === 0) noise('bandpass', 1500 + k * 2500, 1, .12 + k * .25, .1);
+    if (s16 === 0) { const s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain(); s.buffer = noiseBuf(c); fl.type = 'bandpass'; fl.Q.value = 2;
+      fl.frequency.setValueAtTime(400 + k * 3000, t); fl.frequency.linearRampToValueAtTime(400 + (k + 1 / 8) * 3000, t + CLUB_SPB * 4); s.connect(fl).connect(g).connect(out); g.gain.setValueAtTime(.05 + k * .12, t); g.gain.linearRampToValueAtTime(.06 + k * .14, t + CLUB_SPB * 4); s.loop = true; s.start(t); s.stop(t + CLUB_SPB * 4); } }
+  if ((sec === 'drop' || sec === 'intro' && bar >= 4) && s16 % 4 === 2) osc('sawtooth', mtof(chord[0] - 24), .32, .005, .18, 0, sec === 'drop' ? 900 : 500);
+  if (sec === 'drop' && [0, 3, 6, 10, 12].includes(s16)) for (const n of chord) for (const dt of [-8, 0, 8]) { const o = c.createOscillator(), g = c.createGain(), fl = c.createBiquadFilter(); o.type = 'sawtooth'; o.frequency.value = mtof(n + 12); o.detune.value = dt;
+    fl.type = 'lowpass'; fl.frequency.setValueAtTime(3800, t); fl.frequency.exponentialRampToValueAtTime(700, t + .22); o.connect(fl).connect(g).connect(out); env(g, .004, .045, .24); o.start(t); o.stop(t + .3); }
+  if ((sec === 'break' || sec === 'intro') && s16 === 0 && bar % 2 === 0) for (const n of chord) osc('triangle', mtof(n), .07, .6, CLUB_SPB * 7);
+  if (sec === 'break' && s16 % 2 === 0) osc('square', mtof(chord[(s16 / 2) % 3] + 24), .03, .003, .14, 0, 2400);
+}
+function clubSetInside(v) {
+  if (v === inClub) return; inClub = v;
+  for (const m of clubFx.shell || []) { m.material.colorWrite = !v; m.material.depthWrite = !v; }
+  if (clubFx.curtain) clubFx.curtain.visible = !v;
+  for (const m of clubFx.edges) if (m.userData.ext) m.visible = !v;
+  if (v) { screenFx('#ff2bd6', 'NEON PULSE'); toast('네온 펄스 클럽 입장! · 비보잉 버튼으로 같이 춤춰요 · 소리는 오른쪽 위 소리 버튼'); ac(); }
+}
+function updateClub(now, dt) {
+  const camD = Math.hypot(camera.position.x - CLUB.x, camera.position.z - CLUB.z), pd = Math.hypot(myPos.x - CLUB.x, myPos.z - CLUB.z);
+  if (!clubBuilt) { if (camD < 900) buildClub(); else return; }
+  const beat = clubBeat(now), fb = beat % 1, kick = Math.exp(-fb * 6), sec = clubSection(beat), t = now / 1000;
+  const lvl = sec === 'drop' ? 1 : sec === 'build' ? .4 + .6 * ((Math.floor(beat / 4) % 40) - 8) / 8 : sec === 'intro' ? .35 : .2;
+  const me = walking && !inChamber && !tourOn && myAlt < 1;
+  clubSetInside(me && clubInside(myPos.x, myPos.z));
+  // the camera stays under the roof and close to you while inside
+  if (inClub && !tween) { const v = _clubV.subVectors(camera.position, controls.target), max = rideKind ? 16 : 10; if (v.length() > max) { v.setLength(max); camera.position.copy(controls.target).add(v); }
+    if (camera.position.y > CLUB.h - 1.2) camera.position.y = CLUB.h - 1.2;
+    camera.position.x = THREE.MathUtils.clamp(camera.position.x, CLUB.x - CLUB.w / 2 + 1, CLUB.x + CLUB.w / 2 - CLUB.stageD - .6);
+    camera.position.z = THREE.MathUtils.clamp(camera.position.z, CLUB.z - CLUB.d / 2 + 1, CLUB.z + CLUB.d / 2 - 1); }
+  for (const m of clubFx.edges) m.material.color.setHSL(((m.userData.i * .13 + t * .08) % 1), 1, .45 + kick * .25 * lvl);
+  for (const m of clubFx.skyLasers) { const [sx, sz] = m.userData.s, sw = sec === 'drop' ? 1.4 : .6;
+    m.rotation.set(-Math.PI / 2 + .45 + Math.sin(t * sw + sx) * .35, Math.atan2(sx, sz) + Math.sin(t * .5 * sw + sz) * .6, 0);
+    m.material.opacity = (.25 + .45 * nightNow) * (sec === 'break' ? .4 : 1) * (.7 + .3 * kick); m.material.color.setHSL((t * .05 + sx * .2 + sz * .1 + 1) % 1, 1, .55); }
+  if (camD > 260 && pd > 120) { clubAudioTick(now, 0, false); return; }
+  const camIn = inClub || (Math.abs(camera.position.x - CLUB.x) < CLUB.w / 2 && Math.abs(camera.position.z - CLUB.z) < CLUB.d / 2 && camera.position.y < CLUB.h);
+  for (const m of clubFx.cones) m.visible = camIn; for (const s of clubFx.sparkles) s.visible = camIn;
+  for (const L of clubFx.lasers) { const on = sec === 'drop' || (sec === 'build' && L.e % 2 === 0) || (sec === 'intro' && L.e === 2) || (sec === 'break' && (Math.floor(beat) % 4 === L.e % 4));
+    const sp = sec === 'drop' ? 1.6 : sec === 'build' ? .8 + lvl : .4, col = new THREE.Color().setHSL((t * .1 + L.e * .17) % 1, 1, .55);
+    L.g.visible = on && camIn; L.dot.material.color.copy(col);
+    for (const m of L.fan) { const b = m.userData.b, n = L.fan.length, spread = (b / (n - 1) - .5) * (sec === 'drop' ? 1.4 : .9);
+      m.rotation.set(.18 + Math.sin(t * sp * 1.3 + L.e) * .22 + (sec === 'drop' && Math.floor(beat / 8) % 2 ? Math.sin(t * 4 + b) * .1 : 0), -Math.PI / 2 + spread + Math.sin(t * sp + L.e * 1.1) * .45, 0);
+      m.material.color.copy(col); m.material.opacity = (.5 + .5 * kick) * (sec === 'drop' && fb > .5 && Math.floor(beat) % 8 === 7 ? 0 : 1); } }
+  for (const m of clubFx.cones) { const i = m.userData.i; m.rotation.set(Math.sin(t * .9 + i) * .45, 0, Math.cos(t * .7 + i * 1.3) * .45); m.material.opacity = (.05 + .12 * lvl) * (.6 + .4 * kick); m.material.color.setHSL((t * .07 + i * .15) % 1, 1, .5); }
+  if (clubFx.ball) clubFx.ball.rotation.y += dt * .6;
+  for (const s of clubFx.sparkles) { const u = s.userData; u.a += dt * .35; s.position.set(CLUB.x - 4 + Math.cos(u.a) * u.r, 1 + u.y * (CLUB.h - 3), CLUB.z + Math.sin(u.a) * u.r * 1.4);
+    s.material.opacity = Math.max(0, Math.sin(t * 3 + u.ph)) * (.4 + .6 * lvl); }
+  if (clubFx.floorU) { clubFx.floorU.t.value = t; clubFx.floorU.kick.value = kick * (sec === 'break' ? .3 : 1); clubFx.floorU.lvl.value = lvl; }
+  if (clubFx.boothFace) clubFx.boothFace.material.color.setHSL((t * .12) % 1, 1, .4 + kick * .3);
+  if (clubFx.curtain) clubFx.curtain.material.color.setHSL((t * .1) % 1, .8, .12 + kick * .15 * lvl);
+  for (const o of clubFx.robots) {
+    if (o.spk) { const s = 1 + kick * .18 * (sec === 'break' ? .3 : 1); o.spk.scale.set(s, s, s); continue; }
+    if (!o.r) continue; const b = beat * Math.PI;
+    if (o.dancer) { o.r.position.y = o.y0 + Math.abs(Math.sin(b)) * .35 * (.4 + lvl); o.r.rotation.set(Math.sin(b) * .06, o.rot + Math.sin(b / 2) * .6 * lvl, Math.sin(b) * .1); }
+    else { o.r.position.y = o.y0 + Math.abs(Math.sin(b)) * .12; o.r.rotation.set(Math.sin(b) * .08 * (.5 + lvl), o.rot + Math.sin(b / 4) * .18, 0); }
+  }
+  if (clubFx.led && (camD < 160 || inClub) && now - clubFx.led.last > 33) { clubFx.led.last = now; drawLed(now, beat, kick, sec); }
+  // music: full inside, muffled and fading out to 70 m outside
+  if (pd < 75 && walking && (!actx || actx.state !== 'running') && now - (clubAudio.poke || 0) > 2000) { clubAudio.poke = now; ac(); }
+  const vol = !walking ? Math.max(0, 1 - camD / 120) * .5 : inClub ? 1 : Math.max(0, 1 - pd / 70) * .6;
+  clubAudioTick(now, vol, inClub);
+  if (me && !inClub && pd < 32 && now - clubHintAt > 30000) { clubHintAt = now; toast('EDM 클럽 네온 펄스 · 서쪽(연못 쪽) 빛나는 문으로 들어가요'); }
+}
+const _clubV = new THREE.Vector3();
 
 // ---- ride specials: R while mounted on the dragon or a giant robot ----
 const RIDE_SP = {
@@ -3471,7 +3734,7 @@ renderer.setAnimationLoop((now) => {
   if (tween) { const k = Math.min(1, (now - tween.s) / tween.d), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
     camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e); if (k >= 1) tween = null; }
   if (tourOn) updateTour(now);
-  updateDomains(now); updateSky(now, dt); updateKale(now, dt); updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now); updateFx(now, dt);
+  updateDomains(now); updateSky(now, dt); updateKale(now, dt); updateClub(now, dt); updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now); updateFx(now, dt);
   controls.update(); if (walking && camera.position.y < .4) camera.position.y = .4;
   if (!tourOn) doPick(); updateScreen(now);
   const sh = shakeOffset(now); camera.position.add(sh);
