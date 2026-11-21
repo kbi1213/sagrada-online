@@ -12,6 +12,7 @@ const CHANNEL_CAP = Number(process.env.CHANNEL_CAP) || 50;
 const MAX_CHANNELS = Number(process.env.MAX_CHANNELS) || 100;
 const CANDLE_TTL_MS = 10 * 60 * 1000;
 const CANDLES_PER_CHANNEL = 200;
+const DEFAULT_FEST = 'vRn4eYPkEfg'; // festival music in the east park ('-' = the built-in synth track)
 const DEFAULT_VIDEO = 'Za3A_9Plm5A'; // big screen in the nave plays this until someone changes it
 const INDEX = path.join(__dirname, 'public', 'index.html');
 const STATIC_RE = /^\/(textures|photos|panos|avatars|models|status)\/[a-z0-9_-]+\.(jpg|png|webp|glb)$/;
@@ -114,7 +115,7 @@ wss.on('connection', (ws) => {
       if (ws.ch !== null) return;
       const ch = channelFor(Number(m.ch));
       if (ch === null) { ws.send(JSON.stringify({ type: 'full' })); ws.close(1013, 'full'); return; }
-      if (!channels.has(ch)) channels.set(ch, { clients: new Set(), candles: [], screen: { v: DEFAULT_VIDEO } });
+      if (!channels.has(ch)) channels.set(ch, { clients: new Set(), candles: [], screen: { v: DEFAULT_VIDEO }, fest: { v: DEFAULT_FEST } });
       const c = channels.get(ch);
       ws.ch = ch;
       for (const [k, v] of Object.entries(cleanPresence(m.p))) if (v !== null) ws.p[k] = v;
@@ -125,6 +126,7 @@ wss.on('connection', (ws) => {
         peers: [...c.clients].map((o) => ({ id: o.id, p: o.p })),
         candles: c.candles.map(({ x, z }) => ({ x, z })),
         screen: c.screen,
+        fest: c.fest,
       }));
       c.clients.add(ws);
       broadcast(ch, { type: 'presence', id: ws.id, p: ws.p }, ws);
@@ -161,6 +163,14 @@ wss.on('connection', (ws) => {
       ws.lastScreen = now;
       channels.get(ws.ch).screen = { v };
       broadcast(ws.ch, { type: 'event', topic: 'screen', id: ws.id, data: { v } });
+    } else if (m.type === 'event' && m.topic === 'fest') {
+      const now = Date.now();
+      if (now - (ws.lastFest || 0) < 5000) return; // one change per 5 s per person
+      const v = m.data?.v;
+      if (typeof v !== 'string' || !(v === '-' || /^[A-Za-z0-9_-]{11}$/.test(v))) return;
+      ws.lastFest = now;
+      channels.get(ws.ch).fest = { v };
+      broadcast(ws.ch, { type: 'event', topic: 'fest', id: ws.id, data: { v } });
     }
   });
 

@@ -117,6 +117,11 @@ body.touring .panel, body.touring .title{display:none}
 .css3d{position:fixed;inset:0;z-index:-1;pointer-events:none}
 .screen-el{width:1280px;height:720px;background:#000;backface-visibility:hidden}
 .screen-el iframe{display:block;width:1280px;height:720px;border:0}
+#festForm{display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:6px}
+#festForm input{min-width:0;font:13px var(--body);color:var(--ink);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+#festPlayer{position:fixed;right:max(16px, env(safe-area-inset-right,0px));top:calc(64px + env(safe-area-inset-top,0px));z-index:5;width:240px;border-radius:10px;overflow:hidden;background:#000;box-shadow:0 6px 24px rgba(0,0,0,.5);border:1px solid rgba(0,229,255,.45)}
+#festPlayer iframe{display:block;width:240px;height:135px;border:0}
+#festPlayer p{margin:0;padding:4px 8px;font:600 11px/1.4 system-ui,sans-serif;color:#9ff7ff;background:rgba(4,8,16,.92)}
 #screenForm{display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:6px}
 #screenForm input{min-width:0;font:13px var(--body);color:var(--ink);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 .screen-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
@@ -247,6 +252,11 @@ body.riding #toast{top:calc(160px + env(safe-area-inset-top,0px))}
     <button id="statusBtn" type="button" hidden>상태창 보기</button>
   </div>
   <div>
+    <p class="group-label">페스티벌 음악</p>
+    <form id="festForm"><input id="festUrl" type="url" inputmode="url" placeholder="EDM 유튜브 링크 붙여넣기" aria-label="페스티벌 음악 유튜브 링크"><button type="submit">틀기</button></form>
+    <div class="seg kale-row"><button id="festSynth" type="button">기본 합성 EDM</button><button id="festMute" type="button">음악 끄기</button></div>
+  </div>
+  <div>
     <p class="group-label">대형 화면</p>
     <form id="screenForm"><input id="screenUrl" type="url" inputmode="url" placeholder="유튜브 링크 붙여넣기" aria-label="유튜브 링크"><button type="submit">틀기</button></form>
     <div class="screen-row"><button id="screenGo" type="button">보러 가기</button><button id="muteBtn" type="button">소리 켜기</button><button id="screenDefault" type="button">기본 영상</button></div>
@@ -274,6 +284,7 @@ body.riding #toast{top:calc(160px + env(safe-area-inset-top,0px))}
 <div id="toast" hidden></div>
 <div id="fxScreen" aria-hidden="true"></div><div id="skillBanner" aria-live="polite"></div>
 <button id="navTab" type="button" aria-controls="panel" aria-expanded="false">☰ 메뉴</button>
+<div id="festPlayer" hidden><p>NEON PULSE · 지금 나오는 음악</p></div>
 <div id="joy" hidden role="application" aria-label="이동 조이스틱 · 위 가속/앞으로, 아래 브레이크/뒤로, 좌우 방향"><span>조이스틱</span><i></i></div>
 <div id="pad" hidden><button type="button" id="padAtk">공격</button><button type="button" id="padSp">필살기</button>
   <button type="button" id="padBoost">부스트</button><button type="button" id="padRide">탈것</button>
@@ -1586,6 +1597,7 @@ function createWsRoom() {
         rebuild(); fire(L.conn, true);
         for (const c of m.candles || []) fire(L.topics.candle || [], { topic: 'candle', data: c, peer: '', isMe: false, sameTab: false, kind: 'viewer' });
         if (m.screen) fire(L.topics.screen || [], { topic: 'screen', data: m.screen, peer: '', isMe: false, sameTab: false, kind: 'viewer', welcome: true });
+        if (m.fest) fire(L.topics.fest || [], { topic: 'fest', data: m.fest, peer: '', isMe: false, sameTab: false, kind: 'viewer', welcome: true });
       } else if (m.type === 'presence' && m.id !== myId) { others.set(m.id, { p: Object.freeze(m.p || {}), at: Date.now() }); rebuild(); }
       else if (m.type === 'leave') { others.delete(m.id); rebuild(); }
       else if (m.type === 'event') fire(L.topics[m.topic] || [], { topic: m.topic, data: m.data, peer: m.id, isMe: m.id === myId, sameTab: m.id === myId, kind: 'viewer' });
@@ -2955,7 +2967,7 @@ let inClub = false, clubBuilt = false, clubHintAt = -1e9, lastDropBar = -1, last
 const clubBeat = now => (now - clubT0) / 1000 / CLUB_SPB;
 function clubSection(beat) { const bar = Math.floor(beat / 4) % 40; return bar < 8 ? 'intro' : bar < 16 ? 'build' : bar < 32 ? 'drop' : 'break'; }
 const beamTex = (() => { const c = cv(8, 64), x = c.getContext('2d'), g = x.createLinearGradient(0, 0, 8, 0);
-  g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 8, 64); return new THREE.CanvasTexture(c); })();
+  g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.3, 'rgba(255,255,255,.22)'); g.addColorStop(.44, 'rgba(255,255,255,.75)'); g.addColorStop(.5, 'rgba(255,255,255,1)'); g.addColorStop(.56, 'rgba(255,255,255,.75)'); g.addColorStop(.7, 'rgba(255,255,255,.22)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 8, 64); return new THREE.CanvasTexture(c); })();
 const beamGeo = (() => { const a = new THREE.PlaneGeometry(1, 1).translate(0, .5, 0).rotateX(Math.PI / 2), b = a.clone().rotateZ(Math.PI / 2);
   const g = new THREE.BufferGeometry(), pa = a.attributes.position.array, pb = b.attributes.position.array, ua = a.attributes.uv.array, ia = a.index.array, n = a.attributes.position.count;
   g.setAttribute('position', new THREE.Float32BufferAttribute([...pa, ...pb], 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute([...ua, ...ua], 2));
@@ -3015,15 +3027,15 @@ function buildClub() {
   const deco = clubGrp.children.slice(decoFrom).filter(o => o !== led); clubFx.ledMesh = led;
   // laser fans: along the truss and on the deck front, raking over the crowd and up into the sky
   for (let e = 0; e < 15; e++) { const g = new THREE.Group(); g.position.set(e < 7 ? F + 3 : F + .5, e < 7 ? DH + 41.4 : DH + .6, Z + (e < 7 ? (e - 3) * 11 : (e - 11) * 11)); clubGrp.add(g);
-    const fan = []; for (let b = 0; b < (LOW ? 6 : 14); b++) { const m = makeBeam(NEON[e % 3], .14, 140); m.userData.b = b; g.add(m); fan.push(m); }
+    const fan = []; for (let b = 0; b < (LOW ? 6 : 14); b++) { const m = makeBeam(NEON[e % 3], .34, 150); m.userData.b = b; g.add(m); fan.push(m); }
     const dot = festGlow(NEON[e % 3], 2); g.add(dot); clubFx.lasers.push({ g, fan, e, dot, low: e >= 7 }); }
   // laser towers out in the crowd, firing back at the stage, across the field and into the sky
   for (const [tx, tz] of [[150, CLUB.z - 34], [150, CLUB.z + 34], [163, CLUB.z - 12], [163, CLUB.z + 20]]) {
     add(new THREE.CylinderGeometry(.35, .5, 12, 8), mat('#202028', { metalness: .8 }), tx, 6, tz);
     for (let k = 0; k < 2; k++) { const g = new THREE.Group(); g.position.set(tx, 12.2 + k * .6, tz); clubGrp.add(g); const fan = [];
-      for (let b = 0; b < (LOW ? 5 : 12); b++) { const m = makeBeam(NEON[(k + 1) % 3], .12, 120); m.userData.b = b; g.add(m); fan.push(m); }
+      for (let b = 0; b < (LOW ? 5 : 12); b++) { const m = makeBeam(NEON[(k + 1) % 3], .3, 130); m.userData.b = b; g.add(m); fan.push(m); }
       const dot = festGlow(NEON[(k + 1) % 3], 1.6); g.add(dot); clubFx.lasers.push({ g, fan, e: clubFx.lasers.length, dot, tower: true, k }); } }
-  for (let i = 0; i < (LOW ? 8 : 18); i++) { const m = makeBeam(NEON[i % 4], 1.1, 800); m.position.set(B - 6, DH + 36, Z + (i - 8.5) * 8); clubGrp.add(m); m.userData.i = i; clubFx.skyLasers.push(m); }
+  for (let i = 0; i < (LOW ? 8 : 18); i++) { const m = makeBeam(NEON[i % 4], 2.4, 800); m.position.set(B - 6, DH + 36, Z + (i - 8.5) * 8); clubGrp.add(m); m.userData.i = i; clubFx.skyLasers.push(m); }
   // flame columns along the deck front
   for (let i = 0; i < 10; i++) { const g = new THREE.Group(); g.position.set(F + .8, DH, Z - HW + 4 + i * (HW * 2 - 8) / 9); clubGrp.add(g);
     add(new THREE.CylinderGeometry(.35, .45, .6, 10), mat('#222'), g.position.x, DH + .3, g.position.z);
@@ -3349,10 +3361,10 @@ function updateStageFx(now, dt, t, beat, kick, sec, lvl, bar, camD) {
   if (want && !composer && THREE.EffectComposer && THREE.UnrealBloomPass) {
     const pr = renderer.getPixelRatio(), rt = new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { samples: 4, type: THREE.HalfFloatType });
     composer = new THREE.EffectComposer(renderer, rt); composer.addPass(new THREE.RenderPass(scene, camera));
-    bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .8, .5, .72); composer.addPass(bloomPass);
+    bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1, .6, .55); composer.addPass(bloomPass);
     composer.addPass(new THREE.ShaderPass(THREE.GammaCorrectionShader));
     addEventListener('resize', () => composer && composer.setSize(innerWidth, innerHeight)); }
-  festBloom = want && composer ? (.35 + .55 * night) * (1 - Math.min(1, Math.max(0, camD - 380) / 140)) + kick * .25 * lvl : 0;
+  festBloom = want && composer ? (.55 + .75 * night) * (1 - Math.min(1, Math.max(0, camD - 380) / 140)) + kick * .25 * lvl : 0;
 }
 
 // auto night near the festival: the clock slides to night as you walk up and back to where it was when you leave
@@ -3369,6 +3381,39 @@ function updateFestNight(now, near) {
   if (want && festNight.prev === null && +timeEl.value < 85) { festNight.prev = +timeEl.value; festNight.touched = false; rollClock(93, now); toast('페스티벌에 들어서자 밤이 깊어져요'); }
   if (!want && festNight.prev !== null) { if (!festNight.touched) rollClock(festNight.prev, now); festNight.prev = null; }
   const A = festNight.anim; if (A) { const k = Math.min(1, (now - A.s) / 3500), e = k * k * (3 - 2 * k); timeEl.value = A.from + (A.to - A.from) * e; applyTime(timeEl.value / 100); if (k >= 1) festNight.anim = null; }
+}
+
+// ---- festival music: a YouTube link plays over the field (everyone in the channel hears the same one); the built-in synth track is the fallback ----
+const FEST_DEFAULT = 'vRn4eYPkEfg'; // the festival's opening track until someone in the channel changes it
+const festYT = { v: FEST_DEFAULT, frame: null, vol: -1, playing: false, muted: false, ready: false };
+try { const v = localStorage.getItem('festYT'); if (v === '-') festYT.v = null; else if (/^[A-Za-z0-9_-]{11}$/.test(v || '')) festYT.v = v; } catch (e) {}
+const festPlayerEl = document.getElementById('festPlayer');
+function festCmd(func, args = []) { const f = festYT.frame; if (f && f.contentWindow) f.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args }), '*'); }
+function festLoad(v, create = true) {
+  festYT.v = v; try { localStorage.setItem('festYT', v || '-'); } catch (e) {}
+  if (festYT.frame) { festYT.frame.remove(); festYT.frame = null; } festYT.playing = false; festYT.vol = -1; festYT.ready = false;
+  if (!v || !create) { festPlayerEl.hidden = true; return; }
+  const f = document.createElement('iframe'); f.allow = 'autoplay; encrypted-media'; f.title = '페스티벌 음악';
+  f.src = `https://www.youtube-nocookie.com/embed/${v}?autoplay=1&loop=1&playlist=${v}&controls=1&rel=0&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(location.origin)}`;
+  f.addEventListener('load', () => { festYT.ready = true; festCmd('addEventListener', ['onStateChange']); festYT.vol = -1; });
+  festPlayerEl.appendChild(f); festYT.frame = f; festYT.playing = true;
+}
+document.getElementById('festForm').addEventListener('submit', e => {
+  e.preventDefault(); const inp = document.getElementById('festUrl'), v = parseYouTube(inp.value);
+  if (!v) { toast('유튜브 링크를 확인해 주세요'); return; } inp.value = ''; festYT.muted = false; document.getElementById('festMute').textContent = '음악 끄기';
+  if (room && room.connected()) { room.emit('fest', { v }); toast('페스티벌에 이 곡을 틀었어요 · 같은 채널 모두에게 들려요'); } else { festLoad(v, true); toast('페스티벌에 이 곡을 틀었어요 · 무대 근처에서 크게 들려요'); }
+});
+document.getElementById('festSynth').addEventListener('click', () => { if (room && room.connected()) room.emit('fest', { v: '-' }); else festLoad(null); toast('기본 합성 EDM으로 바꿨어요'); });
+document.getElementById('festMute').addEventListener('click', e => { festYT.muted = !festYT.muted; e.currentTarget.textContent = festYT.muted ? '음악 켜기' : '음악 끄기'; festYT.vol = -1; });
+if (room) room.on('fest', msg => { const v = msg.data && msg.data.v; if (typeof v !== 'string') return; const nv = /^[A-Za-z0-9_-]{11}$/.test(v) ? v : null; if (nv !== festYT.v || !festYT.frame) { festLoad(nv, !!festYT.frame); if (!msg.isMe && !msg.welcome) toast(nv ? '페스티벌 음악이 바뀌었어요' : '페스티벌이 기본 EDM으로 바뀌었어요'); } });
+// volume follows you: full in the crowd, fading out by 260 m; the player pauses far away and resumes when you come back
+function updateFestYT(now, vol01, show) {
+  if (!festYT.v) { festPlayerEl.hidden = true; return; }
+  if (!festYT.frame && show) festLoad(festYT.v);
+  festPlayerEl.hidden = !show;
+  const want = festYT.muted || !soundOn ? 0 : Math.round(vol01 * 100);
+  if (festYT.ready && Math.abs(want - festYT.vol) >= 3) { festYT.vol = want; festCmd('setVolume', [want]); if (want > 0) { festCmd('unMute'); if (!festYT.playing) { festCmd('playVideo'); festYT.playing = true; } } }
+  if (festYT.ready && !show && festYT.playing && vol01 <= 0) { festCmd('pauseVideo'); festYT.playing = false; }
 }
 function fireFlames(now) { for (const f of clubFx.flames) f.t0 = now + Math.random() * 60; }
 function fireConfetti() { const C = clubFx.confetti; for (let i = 0; i < C.n; i++) { C.pos.set([CLUB.front - 2 - Math.random() * 30, 14 + Math.random() * 16, CLUB.z - 45 + Math.random() * 90], i * 3);
@@ -3388,9 +3433,9 @@ function updateClub(now, dt) {
   clubSetInside(me && clubInside(myPos.x, myPos.z));
   for (const m of clubFx.skyLasers) { const i = m.userData.i, sw = sec === 'drop' ? 1.5 : .5;
     m.rotation.set(-Math.PI / 2 + .35 + Math.sin(t * sw + i) * .4, -Math.PI / 2 + Math.sin(t * .45 * sw + i * 1.3) * .9, 0);
-    m.material.opacity = (.22 + .5 * nightNow) * (sec === 'break' ? .35 : 1) * (.7 + .3 * kick); m.material.color.setHSL((.52 + .1 * Math.sin(t * .2 + i)) % 1, 1, .55); }
+    m.material.opacity = (.55 + .45 * nightNow) * (sec === 'break' ? .5 : 1) * (.7 + .3 * kick); m.material.color.setHSL((.52 + .1 * Math.sin(t * .2 + i)) % 1, 1, .55); }
   updateFestNight(now, walking ? pd < 230 : camD < 260);
-  if (camD > 420 && pd > 200) { clubAudioTick(now, 0, false); return; }
+  if (camD > 420 && pd > 200) { clubAudioTick(now, 0, false); updateFestYT(now, 0, false); return; }
   // drop moments: flames on the downbeat of every 4th bar, confetti + fireworks when the drop lands
   if (bar !== lastBar) { lastBar = bar;
     if (sec === 'drop' && (bar === 16 || bar % 4 === 0)) { fireFlames(now); }
@@ -3403,7 +3448,7 @@ function updateClub(now, dt) {
       const pitch = L.tower ? (L.k ? -.55 - Math.abs(Math.sin(t * sp * .7 + b * .3)) * .5 : .03 + Math.sin(t * sp + b) * .06) : L.low ? .02 + Math.sin(t * sp + b) * .05 : (sec === 'drop' && bar % 4 >= 2 ? -.35 : .12) + Math.sin(t * sp * 1.3 + L.e) * .18;
       const yaw0 = L.tower ? (L.k ? Math.PI / 2 : Math.PI / 2) + (L.k ? spread * 2.2 + t * sp * .3 : spread * 1.3 + Math.sin(t * sp + L.e) * .5) : -Math.PI / 2 + spread + Math.sin(t * sp + L.e * 1.1) * .4;
       m.rotation.set(pitch, yaw0, 0);
-      m.material.color.copy(col); m.material.opacity = (.35 + .4 * nightNow) * (.55 + .45 * kick) * (sec === 'drop' && fb > .5 && Math.floor(beat) % 8 === 7 ? 0 : 1); } }
+      m.material.color.copy(col); m.material.opacity = (.75 + .25 * nightNow) * (.7 + .3 * kick) * (sec === 'drop' && fb > .5 && Math.floor(beat) % 8 === 7 ? 0 : 1); } }
   for (const s of clubFx.strip) s.material.opacity = .45 + .55 * kick * (sec === 'break' ? .3 : 1);
   for (const m of clubFx.edges) m.material.color.setHSL(((m.userData.i * .13 + t * .08) % 1), 1, .45 + kick * .25 * lvl);
   for (const sp of clubFx.spires) if (sp.userData.flower) { sp.rotation.x = t * .3; const o = 1 + kick * .06 * lvl; sp.scale.setScalar(o); sp.userData.flower.emissiveIntensity = .2 + kick * .8 * lvl; }
@@ -3437,7 +3482,8 @@ function updateClub(now, dt) {
   if (clubFx.led && camD < 400 && now - clubFx.led.last > 33) { clubFx.led.last = now; renderScreen3D(now, beat, kick, sec, lvl); }
   if (pd < 120 && walking && (!actx || actx.state !== 'running') && now - clubAudio.poke > 2000) { clubAudio.poke = now; ac(); }
   const near = inClub || pd < 60, vol = !walking ? Math.max(0, 1 - camD / 200) * .5 : inClub ? 1 : Math.max(0, 1 - Math.max(0, pd - 40) / 160) * .8;
-  clubAudioTick(now, vol, near);
+  updateFestYT(now, Math.min(1, vol * 1.15), (walking ? pd < 260 : camD < 300));
+  clubAudioTick(now, festYT.v ? 0 : vol, near);
   if (me && !inClub && pd < 110 && now - clubHintAt > 30000) { clubHintAt = now; toast('네온 펄스 페스티벌 · 연못 동쪽 무대 앞으로 가 보세요'); }
 }
 
