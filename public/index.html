@@ -2737,6 +2737,71 @@ function updateSky(now, dt) {
 
 
 // a real kaleidoscope: three mirrors fold the view into an endless field of triangles showing a chamber of loose crystals, beads and glitter
+const KALE_PSY_GLSL = `
+  // ---- 70s psychedelic sky: retro palette, op-art sunbursts, eyes in zigzag rings, liquid stripes, a rainbow-smeared sun ----
+  float hsh(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
+  vec3 retro(float x){ float i = floor(mod(x, 7.0));
+    return i < 1.0 ? vec3(.96,.89,.74) : i < 2.0 ? vec3(.97,.73,.12) : i < 3.0 ? vec3(.92,.37,.11) : i < 4.0 ? vec3(.93,.16,.60) : i < 5.0 ? vec3(.10,.64,.62) : i < 6.0 ? vec3(.24,.62,.20) : vec3(.27,.14,.08); }
+  vec3 neonRing(float x){ float i = floor(mod(x, 5.0));
+    return i < 1.0 ? vec3(.95,.10,.75) : i < 2.0 ? vec3(.05,.05,.07) : i < 3.0 ? vec3(.10,.75,.80) : i < 4.0 ? vec3(.98,.55,.10) : vec3(.45,.20,.85); }
+  // an eye: almond white with a black rim, a ringed iris, pupil and a glint. returns rgb, a = coverage
+  vec4 eyeAt(vec2 p, float sz, float t, float hue){
+    p /= sz; float w = 1.0 - p.x * p.x; if (w <= 0.0) return vec4(0.0);
+    float blink = 1.0 - 0.9 * smoothstep(0.985, 1.0, sin(t * 0.9 + hue * 9.0)); float lid = 0.55 * w * blink;
+    float ay = abs(p.y); if (ay > lid + 0.12) return vec4(0.0);
+    if (ay > lid) return vec4(0.03, 0.02, 0.02, 1.0);
+    vec2 ip = p - vec2(sin(t * 0.5 + hue * 6.0) * 0.18, 0.0); float ir = length(ip);
+    vec3 c = vec3(0.97, 0.95, 0.9);
+    if (ir < 0.42) { vec3 a = hue < 0.33 ? vec3(.2,.55,.15) : hue < 0.66 ? vec3(.15,.55,.85) : vec3(.75,.12,.10);
+      c = mix(a * 0.5, a * 1.3, smoothstep(0.08, 0.42, ir)) * (0.8 + 0.2 * sin(atan(ip.y, ip.x) * 18.0)); c = mix(c, vec3(0.02), smoothstep(0.37, 0.42, ir)); }
+    if (ir < 0.17) c = vec3(0.01);
+    if (length(ip - vec2(0.08, 0.1)) < 0.07) c = vec3(1.0);
+    return vec4(c, 1.0); }
+  vec3 psyCol(float mode, vec3 d, float r, float t){
+    float th = atan(d.z, d.x), u = th / 6.2831853 + 0.5; vec3 col;
+    if (mode < 1.5) { // groovy sunburst: zigzag rays, a hypnotic spiral at the top, a belt of retro zigzag rings
+      float z = abs(fract(r * 40.0) - 0.5) * 0.25;
+      float rays = step(0.5, fract(u * 60.0 + t * 0.02 + z));
+      col = mix(vec3(.10,.06,.05), vec3(.96,.89,.74), rays);
+      float v = r * 26.0 - t * 0.5 + abs(fract(u * 120.0) - 0.5) * 0.5;
+      if ((r > 0.26 && r < 0.5) || (r > 0.66 && r < 0.84)) col = mix(retro(floor(v) * 3.0), col, step(0.82, fract(v)));
+      if (r < 0.2) { float sp = fract(u * 2.0 + r * 16.0 - t * 0.4); col = mix(vec3(.10,.12,.45), vec3(.96,.89,.74), step(0.5, sp)); }
+      if (abs(r - 0.2) < 0.012 || abs(r - 0.26) < 0.008 || abs(r - 0.5) < 0.008 || abs(r - 0.66) < 0.006 || abs(r - 0.84) < 0.006) col = vec3(.10,.06,.05);
+    } else if (mode < 2.5) { // the watching sky: an eye at the top and a ring of eyes, all in pulsing zigzag rings
+      float v = r * 34.0 + abs(fract(u * 96.0) - 0.5) * 0.9 - t * 0.8;
+      col = neonRing(floor(v)); col *= 0.75 + 0.25 * smoothstep(0.0, 0.25, fract(v));
+      vec4 e0 = eyeAt(vec2(d.x, d.z) / max(0.2, 1.0 - r * 0.6), 0.32, t, 0.5); col = mix(col, e0.rgb, e0.a);
+      for (int j = 0; j < 2; j++) { float n = j == 0 ? 7.0 : 12.0, rc = j == 0 ? 0.45 : 0.76, sg = 1.0 / n, uu = fract(u + float(j) * 0.04 + t * 0.004), k = floor(uu / sg), a = (uu - (k + 0.5) * sg) * 6.2831853 * sin(rc * 1.5707963);
+        vec4 e = eyeAt(vec2(a, (r - rc) * 1.5707963), j == 0 ? 0.22 : 0.17, t, fract(k * 0.37 + float(j) * 0.5)); col = mix(col, e.rgb, e.a); }
+    } else if (mode < 3.5) { // liquid 70s stripes, mirrored, melting slowly
+      float a = abs(fract(u * 10.0) - 0.5) * 2.0;
+      vec2 q = vec2(a * 2.6, r * 11.0);
+      q += 0.45 * sin(q.yx * 1.7 + t * 0.35); q += 0.28 * sin(q.yx * 3.3 - t * 0.27);
+      float v = q.x * 1.3 + q.y * 1.1 + t * 0.15;
+      col = retro(floor(v * 1.6)); col = mix(vec3(.14,.07,.04), col, smoothstep(0.0, 0.07, fract(v * 1.6)));
+    } else { // rainbow sun: a spiky sun face at the top, colours smeared outward in streaks
+      float k = floor(u * 160.0), h = hsh(vec2(k, 3.0)), w = fract(u * 160.0);
+      col = 0.5 + 0.5 * cos(6.2831853 * (vec3(0.0, 0.33, 0.67) + h * 2.0 + r * 1.2 - t * 0.1));
+      col = mix(col, vec3(.95,.15,.85), step(0.72, hsh(vec2(k, 7.0))));
+      col *= 0.8 + 0.2 * step(0.15, w);
+      col = mix(col, 0.5 + 0.5 * cos(6.2831853 * (vec3(0.0, 0.33, 0.67) + floor(r * 40.0) * 0.13 - t * 0.2)), step(0.84, r) * 0.7);
+      float spikes = 0.2 + 0.04 * abs(fract(u * 16.0 + t * 0.05) - 0.5) * 2.0 + 0.02 * sin(u * 6.2831853 * 32.0 + t * 3.0);
+      if (r < spikes) col = mix(vec3(.15,.15,.16), vec3(.55,.55,.56), step(0.5, fract(r * 40.0)));
+      { float n = 6.0, sg = 1.0 / n, uu = fract(u + t * 0.006), k = floor(uu / sg), a = (uu - (k + 0.5) * sg) * 6.2831853 * 0.96; vec2 f = vec2(a, (r - 0.7) * 1.5707963) / 0.2, fs = f;
+        float rr = length(f), ang = atan(f.y, f.x), sp = 1.0 + 0.25 * abs(fract(ang / 6.2831853 * 16.0 + t * 0.05) - 0.5) * 2.0;
+        if (rr < sp) col = mix(vec3(.15,.15,.16), vec3(.6), step(0.5, fract(rr * 8.0)));
+        if (rr < 0.62) { col = vec3(.2,.2,.22) + 0.06 * sin(f.x * 30.0) * sin(f.y * 30.0);
+          if (min(abs(length(f - vec2(-0.22, 0.12)) - 0.1), abs(length(f - vec2(0.22, 0.12)) - 0.1)) < 0.025 && f.y < 0.14) col = vec3(.92);
+          if (abs(length(f - vec2(0.0, 0.05)) - 0.3) < 0.03 && f.y < -0.08) col = vec3(.92); if (abs(rr - 0.6) < 0.03) col = vec3(.85); } }
+      if (r < 0.13) { vec2 f = vec2(d.x, d.z) / 0.215; col = vec3(.18,.18,.2) + 0.08 * sin(f.x * 40.0) * sin(f.y * 40.0);
+        float eyes = min(abs(length(f - vec2(-0.25, 0.12)) - 0.12), abs(length(f - vec2(0.25, 0.12)) - 0.12));
+        if (eyes < 0.02 && f.y < 0.14) col = vec3(.9);
+        if (abs(length(f - vec2(0.0, 0.05)) - 0.32) < 0.025 && f.y < -0.08) col = vec3(.9);
+        if (abs(length(f) - 0.6) < 0.03) col = vec3(.85); }
+    }
+    float grain = hsh(floor(gl_FragCoord.xy) + floor(t * 20.0)); col *= 0.93 + 0.07 * grain;
+    return col; }
+`;
 const KALE_TRI_GLSL = `
   vec2 triFold(vec2 p){
     for (int i = 0; i < 40; i++) {
@@ -2779,6 +2844,10 @@ function getKaleTex(kind) {
 }
 // ---------- kaleidoscope sky: a mirrored, slowly turning fractal of colour over the whole dome (K toggles, the second button changes the pattern) ----------
 const KALE = [
+  { name: '사이키델릭 눈', psy: 2, seg: 12, c: [.82, .60], sat: .85, hue: 0, zoom: 1.5, spin: .02 },
+  { name: '그루비 선버스트', psy: 1, seg: 12, c: [.82, .60], sat: .85, hue: 0, zoom: 1.5, spin: .02 },
+  { name: '녹아내리는 70년대', psy: 3, seg: 12, c: [.82, .60], sat: .85, hue: 0, zoom: 1.5, spin: .02 },
+  { name: '무지개 태양', psy: 4, seg: 12, c: [.82, .60], sat: .85, hue: 0, zoom: 1.5, spin: .02 },
   { name: '크리스털 만화경', img: 'gem', tri: 9, seg: 12, c: [.82, .60], sat: .85, hue: .00, zoom: 1.5, spin: .04 },
   { name: '분홍 보석 만화경', img: 'gemPink', tri: 7.5, seg: 12, c: [.82, .60], sat: .85, hue: .00, zoom: 1.5, spin: -.035 },
   { name: '스테인드글라스 만화경', img: 'glass', tri: 6, seg: 12, c: [.82, .60], sat: .85, hue: .00, zoom: 1.5, spin: .025 },
@@ -2788,16 +2857,18 @@ const KALE = [
   { name: '무지개 소용돌이', seg: 16, c: [.90, .78], sat: .95, hue: .80, zoom: 2.6, spin: .09 },
   { name: '불꽃 만다라', seg: 10, c: [.72, .50], sat: .90, hue: .02, zoom: 1.8, spin: -.06 },
 ];
-const kaleU = { img: { value: null }, useImg: { value: 0 }, tri: { value: 2.5 }, t: { value: 0 }, op: { value: 0 }, seg: { value: 12 }, c: { value: new THREE.Vector2(.82, .6) }, sat: { value: .7 }, hue: { value: 0 }, zoom: { value: 1.5 }, spin: { value: .05 } };
+const kaleU = { psy: { value: 0 }, img: { value: null }, useImg: { value: 0 }, tri: { value: 2.5 }, t: { value: 0 }, op: { value: 0 }, seg: { value: 12 }, c: { value: new THREE.Vector2(.82, .6) }, sat: { value: .7 }, hue: { value: 0 }, zoom: { value: 1.5 }, spin: { value: .05 } };
 const kaleMat = new THREE.ShaderMaterial({
   uniforms: kaleU, side: THREE.BackSide, depthWrite: false, fog: false, transparent: true,
   vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-  fragmentShader: `uniform float t, op, seg, sat, hue, zoom, spin, useImg, tri; uniform vec2 c; uniform sampler2D img; varying vec3 vP;
+  fragmentShader: `uniform float t, op, seg, sat, hue, zoom, spin, useImg, tri, psy; uniform vec2 c; uniform sampler2D img; varying vec3 vP;
     ${KALE_TRI_GLSL}
+    ${KALE_PSY_GLSL}
     vec3 hsv(float h, float s, float v){ vec3 k = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); return v * mix(vec3(1.0), k, s); }
     void main(){
       vec3 d = normalize(vP);
       float r = 1.0 - asin(clamp(d.y, -1.0, 1.0)) / 1.5707963;              // 0 straight up, 1 at the horizon
+      if (psy > 0.5) { gl_FragColor = linearToOutputTexel(vec4(psyCol(psy, d, r, t), op * 0.97 * smoothstep(-0.05, 0.0, d.y))); return; }
       if (useImg > 0.5) { float th = atan(d.z, d.x) + t * spin * 0.5; vec3 kc = kaleImg(img, vec2(cos(th), sin(th)) * r * tri + vec2(0.5, 0.29), t, spin * 4.0);
         kc *= mix(1.0, 0.3, smoothstep(0.7, 1.0, r)); gl_FragColor = linearToOutputTexel(vec4(kc, op * 0.97 * smoothstep(-0.05, 0.0, d.y))); return; }
       float sg = 6.2831853 / seg, a = mod(atan(d.z, d.x) + t * spin, sg); a = abs(a - sg * .5); // fold into one mirrored wedge
@@ -2819,9 +2890,9 @@ const kaleMat = new THREE.ShaderMaterial({
 const kaleDome = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), kaleMat);
 kaleDome.scale.setScalar(2900); kaleDome.renderOrder = -1; kaleDome.frustumCulled = false; kaleDome.visible = false; scene.add(kaleDome);
 let kaleOn = false, kaleIdx = 0;
-try { kaleOn = localStorage.getItem('kaleOn') === '1'; kaleIdx = localStorage.getItem('kaleV') === '2' ? (+localStorage.getItem('kaleIdx') || 0) % KALE.length : 0; localStorage.setItem('kaleV', '2'); } catch (e) {}
+try { kaleOn = localStorage.getItem('kaleOn') === '1'; kaleIdx = localStorage.getItem('kaleV') === '3' ? (+localStorage.getItem('kaleIdx') || 0) % KALE.length : 0; localStorage.setItem('kaleV', '3'); } catch (e) {}
 function setKaleStyle(i) { kaleIdx = (i + KALE.length) % KALE.length; const k = KALE[kaleIdx];
-  kaleU.useImg.value = k.img ? 1 : 0; if (k.img) { kaleU.img.value = getKaleTex(k.img); kaleU.tri.value = k.tri; }
+  kaleU.psy.value = k.psy || 0; kaleU.useImg.value = k.img ? 1 : 0; if (k.img) { kaleU.img.value = getKaleTex(k.img); kaleU.tri.value = k.tri; }
   kaleU.seg.value = k.seg; kaleU.c.value.set(k.c[0], k.c[1]); kaleU.sat.value = k.sat; kaleU.hue.value = k.hue; kaleU.zoom.value = k.zoom; kaleU.spin.value = k.spin;
   const nb = document.getElementById('kaleNext'); if (nb) nb.textContent = '무늬: ' + k.name;
   try { localStorage.setItem('kaleIdx', kaleIdx); } catch (e) {} }
