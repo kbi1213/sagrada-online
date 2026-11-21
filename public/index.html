@@ -3295,6 +3295,9 @@ function buildStageFx(H, screenX) {
   for (let i = 0; i < (LOW ? 14 : 34); i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: festSmokeTex, color: '#9fdcff', transparent: true, opacity: .0, depthWrite: false, fog: false }));
     s.userData = { z: Z - 55 + Math.random() * 110, x: F - 2 - Math.random() * 16, y: 1 + Math.random() * 3.5, sp: .6 + Math.random() * 1.2, sc: 8 + Math.random() * 9, ph: Math.random() * 6 };
     s.scale.setScalar(s.userData.sc); clubGrp.add(s); fx.smoke.push(s); }
+  for (let i = 0; i < (LOW ? 10 : 40); i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: festSmokeTex, color: '#9fdcff', transparent: true, opacity: 0, depthWrite: false, fog: false }));
+    s.userData = { hz: 1, z: Z - 55 + Math.random() * 110, x: F - 4 - Math.random() * 70, y: 6 + Math.random() * 24, sp: .3 + Math.random() * .6, sc: 22 + Math.random() * 18, ph: Math.random() * 6 };
+    s.scale.setScalar(s.userData.sc); clubGrp.add(s); fx.smoke.push(s); }
   // CO2 cannons on the deck edge
   for (let i = 0; i < 8; i++) { const g = new THREE.Group(); g.position.set(F + .5, CLUB.deckH, Z - 38 + i * 76 / 7); clubGrp.add(g); const parts = [];
     for (let k = 0; k < 6; k++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: festSmokeTex, color: '#ffffff', transparent: true, opacity: 0, depthWrite: false, fog: false })); g.add(s); parts.push(s); }
@@ -3340,8 +3343,8 @@ function updateStageFx(now, dt, t, beat, kick, sec, lvl, bar, camD) {
     h.lens.material.color.copy(h.beam.material.uniforms.color.value); h.lens.material.opacity = on * (.5 + .5 * kick); }
   // smoke
   for (const s of fx.smoke) { const u = s.userData; u.z += u.sp * dt; if (u.z > CLUB.z + 58) u.z = CLUB.z - 58;
-    s.position.set(u.x + Math.sin(t * .3 + u.ph) * 2, u.y + Math.sin(t * .5 + u.ph) * .4, u.z); s.material.opacity = .1 + .22 * night;
-    s.material.color.setHSL(hue, .55 * night, .55 + .3 * kick * lvl * night); s.material.rotation = t * .05 + u.ph; }
+    s.position.set(u.x + Math.sin(t * .3 + u.ph) * 2, u.y + Math.sin(t * .5 + u.ph) * .4, u.z); s.material.opacity = u.hz ? .035 + .06 * night : .12 + .22 * night;
+    s.material.color.setHSL(u.hz ? (hue + u.ph * .1) % 1 : hue, .55 * night, u.hz ? .3 + .15 * kick * night : .55 + .3 * kick * lvl * night); s.material.rotation = t * .05 + u.ph; }
   // CO2: a blast on the last beat of the build and every 8 bars in the drop
   if ((bar === 15 && beat % 4 >= 3 || drop && bar % 8 === 0 && beat % 4 < .2) && fx.lastCo2Bar !== Math.floor(beat / 4)) { fx.lastCo2Bar = Math.floor(beat / 4); for (const c of fx.co2) c.t0 = now + Math.random() * 80; if (camD < 200) sfx('slash', .4); }
   for (const c of fx.co2) { const a = (now - c.t0) / 1000; c.parts.forEach((s, k) => { if (a < 0 || a > 1.8) { s.material.opacity = 0; return; }
@@ -3415,6 +3418,19 @@ function updateFestYT(now, vol01, show) {
   if (festYT.ready && Math.abs(want - festYT.vol) >= 3) { festYT.vol = want; festCmd('setVolume', [want]); if (want > 0) { festCmd('unMute'); if (!festYT.playing) { festCmd('playVideo'); festYT.playing = true; } } }
   if (festYT.ready && !show && festYT.playing && vol01 <= 0) { festCmd('pauseVideo'); festYT.playing = false; }
 }
+
+// laser colour schemes, switching every 4 bars: each emitter its own colour, a rainbow across each fan, complementary pairs, warm fire, a spectrum chase over the whole field
+const LASER_WARM = [0, .03, .08, .13, .93, .97];
+function laserHue(L, b, n, t, bar) {
+  switch (Math.floor(bar / 4) % 6) {
+    case 0: return (L.e * .137 + t * .02) % 1;
+    case 1: return (b / n + t * .08) % 1;
+    case 2: { const base = (Math.floor(bar / 4) * .23 + L.e * .05) % 1; return (base + (b % 2) * .5) % 1; }
+    case 3: return LASER_WARM[(b + L.e) % LASER_WARM.length];
+    case 4: return (t * .25 + L.e * .07 + b * .03) % 1;
+    default: return [.0, .33, .55, .66, .8, .13][(L.e + Math.floor(t * 2)) % 6];
+  }
+}
 function fireFlames(now) { for (const f of clubFx.flames) f.t0 = now + Math.random() * 60; }
 function fireConfetti() { const C = clubFx.confetti; for (let i = 0; i < C.n; i++) { C.pos.set([CLUB.front - 2 - Math.random() * 30, 14 + Math.random() * 16, CLUB.z - 45 + Math.random() * 90], i * 3);
   C.vel.set([(Math.random() - .5) * 2, -1.2 - Math.random() * 1.5, (Math.random() - .5) * 2], i * 3); } C.live = 1; }
@@ -3433,7 +3449,7 @@ function updateClub(now, dt) {
   clubSetInside(me && clubInside(myPos.x, myPos.z));
   for (const m of clubFx.skyLasers) { const i = m.userData.i, sw = sec === 'drop' ? 1.5 : .5;
     m.rotation.set(-Math.PI / 2 + .35 + Math.sin(t * sw + i) * .4, -Math.PI / 2 + Math.sin(t * .45 * sw + i * 1.3) * .9, 0);
-    m.material.opacity = (.55 + .45 * nightNow) * (sec === 'break' ? .5 : 1) * (.7 + .3 * kick); m.material.color.setHSL((.52 + .1 * Math.sin(t * .2 + i)) % 1, 1, .55); }
+    m.material.opacity = (.55 + .45 * nightNow) * (sec === 'break' ? .5 : 1) * (.7 + .3 * kick); m.material.color.setHSL((i / clubFx.skyLasers.length + t * .04) % 1, 1, .55); }
   updateFestNight(now, walking ? pd < 230 : camD < 260);
   if (camD > 420 && pd > 200) { clubAudioTick(now, 0, false); updateFestYT(now, 0, false); return; }
   // drop moments: flames on the downbeat of every 4th bar, confetti + fireworks when the drop lands
@@ -3442,13 +3458,13 @@ function updateClub(now, dt) {
     if (bar === 16 && lastDropBar !== Math.floor(beat / 160)) { lastDropBar = Math.floor(beat / 160); fireConfetti(); for (let k = 0; k < 5; k++) setTimeout(() => fireworkBurst(CLUB.back - 4 + Math.random() * 8, 48 + Math.random() * 20, CLUB.z - 40 + Math.random() * 80, NEON[k % NEON.length]), k * 260); }
     if (sec === 'drop' && bar % 2 === 1) fireworkBurst(CLUB.back + Math.random() * 6, 50 + Math.random() * 25, CLUB.z - 45 + Math.random() * 90, NEON[bar % NEON.length]); }
   for (const L of clubFx.lasers) { const on = sec === 'drop' || sec === 'build' || (sec === 'intro' && (!L.low || L.tower)) || (sec === 'break' && (L.e % 3 === 0 || L.tower && L.k === 1));
-    const sp = sec === 'drop' ? 1.5 : sec === 'build' ? .7 + lvl : .35, col = new THREE.Color().setHSL(sec === 'drop' && bar % 8 >= 4 ? (t * .12 + L.e * .1) % 1 : .55 + .08 * Math.sin(L.e + t * .3), 1, .55);
-    L.g.visible = on; L.dot.material.color.copy(col);
+    const sp = sec === 'drop' ? 1.5 : sec === 'build' ? .7 + lvl : .35;
+    L.g.visible = on; if (!on) continue;
     for (const m of L.fan) { const b = m.userData.b, n = L.fan.length, spread = (b / (n - 1) - .5) * (sec === 'drop' ? 1.5 : 1);
       const pitch = L.tower ? (L.k ? -.55 - Math.abs(Math.sin(t * sp * .7 + b * .3)) * .5 : .03 + Math.sin(t * sp + b) * .06) : L.low ? .02 + Math.sin(t * sp + b) * .05 : (sec === 'drop' && bar % 4 >= 2 ? -.35 : .12) + Math.sin(t * sp * 1.3 + L.e) * .18;
       const yaw0 = L.tower ? (L.k ? Math.PI / 2 : Math.PI / 2) + (L.k ? spread * 2.2 + t * sp * .3 : spread * 1.3 + Math.sin(t * sp + L.e) * .5) : -Math.PI / 2 + spread + Math.sin(t * sp + L.e * 1.1) * .4;
       m.rotation.set(pitch, yaw0, 0);
-      m.material.color.copy(col); m.material.opacity = (.75 + .25 * nightNow) * (.7 + .3 * kick) * (sec === 'drop' && fb > .5 && Math.floor(beat) % 8 === 7 ? 0 : 1); } }
+      m.material.color.setHSL(laserHue(L, b, n, t, bar), 1, sec === 'drop' && kick > .85 && (b + L.e) % 5 === 0 ? .8 : .55); if (b === 0) L.dot.material.color.copy(m.material.color); m.material.opacity = (.75 + .25 * nightNow) * (.7 + .3 * kick) * (sec === 'drop' && fb > .5 && Math.floor(beat) % 8 === 7 ? 0 : 1); } }
   for (const s of clubFx.strip) s.material.opacity = .45 + .55 * kick * (sec === 'break' ? .3 : 1);
   for (const m of clubFx.edges) m.material.color.setHSL(((m.userData.i * .13 + t * .08) % 1), 1, .45 + kick * .25 * lvl);
   for (const sp of clubFx.spires) if (sp.userData.flower) { sp.rotation.x = t * .3; const o = 1 + kick * .06 * lvl; sp.scale.setScalar(o); sp.userData.flower.emissiveIntensity = .2 + kick * .8 * lvl; }
