@@ -2972,9 +2972,12 @@ const beamGeo = (() => { const a = new THREE.PlaneGeometry(1, 1).translate(0, .5
   const g = new THREE.BufferGeometry(), pa = a.attributes.position.array, pb = b.attributes.position.array, ua = a.attributes.uv.array, ia = a.index.array, n = a.attributes.position.count;
   g.setAttribute('position', new THREE.Float32BufferAttribute([...pa, ...pb], 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute([...ua, ...ua], 2));
   g.setIndex([...ia, ...Array.from(ia, v => v + n)]); return g; })();
-function makeBeam(color, width, len) { const m = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ map: beamTex, color, transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+const beamGeoH = (() => { const pa = beamGeo.attributes.position.array, ua = beamGeo.attributes.uv.array, ia = beamGeo.index.array, n = pa.length / 3;
+  const pos = [...pa], col = new Array(n * 3).fill(1); for (let i = 0; i < n; i++) { pos.push(pa[i * 3] * 5, pa[i * 3 + 1] * 5, pa[i * 3 + 2]); col.push(.022, .022, .022); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute([...ua, ...ua], 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex([...ia, ...Array.from(ia, v => v + n)]); return g; })();
+function makeBeam(color, width, len) { const m = new THREE.Mesh(LOW ? beamGeo : beamGeoH, new THREE.MeshBasicMaterial({ map: beamTex, color, vertexColors: !LOW, transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
   m.scale.set(width, width, len); m.rotation.order = 'YXZ'; m.frustumCulled = false;
-  if (!LOW) { const h = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ map: beamTex, color, transparent: true, opacity: .12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false })); h.scale.set(5, 5, 1); h.frustumCulled = false; m.add(h); }
   return m; }
 const festGlow = (color, s) => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false })); sp.scale.setScalar(s); return sp; };
 const NEON = ['#00e5ff', '#2f6bff', '#ff2bd6', '#7a5cff', '#39ff9a', '#ffe14a'];
@@ -3028,22 +3031,22 @@ function buildClub() {
   add(new THREE.BoxGeometry(1, 1, HW * 1.5), trussMat, F + 3, DH + 42, Z); for (const s of [-1, 1]) add(new THREE.BoxGeometry(1, 42, 1), trussMat, F + 3, DH + 21, Z + s * HW * .75);
   const deco = clubGrp.children.slice(decoFrom).filter(o => o !== led); clubFx.ledMesh = led;
   // laser fans: along the truss and on the deck front, raking over the crowd and up into the sky
-  for (let e = 0; e < 15; e++) { const g = new THREE.Group(); g.position.set(e < 7 ? F + 3 : F + .5, e < 7 ? DH + 41.4 : DH + .6, Z + (e < 7 ? (e - 3) * 11 : (e - 11) * 11)); clubGrp.add(g);
-    const fan = []; for (let b = 0; b < (LOW ? 6 : 14); b++) { const m = makeBeam(NEON[e % 3], .34, 150); m.userData.b = b; g.add(m); fan.push(m); }
-    const dot = festGlow(NEON[e % 3], 2); g.add(dot); const L = { g, fan, e, dot, low: e >= 7 }; clubFx.lasers.push(L); const DIR = -1;
+  for (let e = 0; e < 21; e++) { const g = new THREE.Group(); g.position.set(e < 9 ? F + 3 : F + .5, e < 9 ? DH + 41.4 : DH + .6, Z + (e < 9 ? (e - 4) * 9.5 : (e - 14.5) * 9)); clubGrp.add(g);
+    const fan = []; for (let b = 0; b < (LOW ? 6 : 18); b++) { const m = makeBeam(NEON[e % 3], .34, 150); m.userData.b = b; g.add(m); fan.push(m); }
+    const dot = festGlow(NEON[e % 3], 2); g.add(dot); const L = { g, fan, e, dot, low: e >= 9 }; clubFx.lasers.push(L); const DIR = -1;
     L.haze = []; for (let k = 0; k < (LOW ? 1 : 3); k++) { const hs = new THREE.Sprite(new THREE.SpriteMaterial({ map: festSmokeTex, color: '#ffffff', transparent: true, opacity: 0, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
       hs.position.set(DIR * (14 + k * 20), (L.tower ? 2 : -4) + k * 3, (k - 1) * 6); hs.scale.setScalar(16 + k * 10); hs.userData.k = k; L.g.add(hs); L.haze.push(hs); }
   }
   // laser towers out in the crowd, firing back at the stage, across the field and into the sky
-  for (const [tx, tz] of [[150, CLUB.z - 34], [150, CLUB.z + 34], [163, CLUB.z - 12], [163, CLUB.z + 20]]) {
+  for (const [tx, tz] of [[150, CLUB.z - 34], [150, CLUB.z + 34], [163, CLUB.z - 12], [163, CLUB.z + 20], [137, CLUB.z - 52], [137, CLUB.z + 52], [140, CLUB.z + 2], [124, CLUB.z - 28], [124, CLUB.z + 30]].slice(0, LOW ? 4 : 9)) {
     add(new THREE.CylinderGeometry(.35, .5, 12, 8), mat('#202028', { metalness: .8 }), tx, 6, tz);
     for (let k = 0; k < 2; k++) { const g = new THREE.Group(); g.position.set(tx, 12.2 + k * .6, tz); clubGrp.add(g); const fan = [];
-      for (let b = 0; b < (LOW ? 5 : 12); b++) { const m = makeBeam(NEON[(k + 1) % 3], .3, 130); m.userData.b = b; g.add(m); fan.push(m); }
+      for (let b = 0; b < (LOW ? 5 : 16); b++) { const m = makeBeam(NEON[(k + 1) % 3], .3, 130); m.userData.b = b; g.add(m); fan.push(m); }
       const dot = festGlow(NEON[(k + 1) % 3], 1.6); g.add(dot); const L = { g, fan, e: clubFx.lasers.length, dot, tower: true, k }; clubFx.lasers.push(L); const DIR = 1;
     L.haze = []; for (let k = 0; k < (LOW ? 1 : 3); k++) { const hs = new THREE.Sprite(new THREE.SpriteMaterial({ map: festSmokeTex, color: '#ffffff', transparent: true, opacity: 0, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
       hs.position.set(DIR * (14 + k * 20), (L.tower ? 2 : -4) + k * 3, (k - 1) * 6); hs.scale.setScalar(16 + k * 10); hs.userData.k = k; L.g.add(hs); L.haze.push(hs); }
   } }
-  for (let i = 0; i < (LOW ? 8 : 18); i++) { const m = makeBeam(NEON[i % 4], 2.4, 800); m.position.set(B - 6, DH + 36, Z + (i - 8.5) * 8); clubGrp.add(m); m.userData.i = i; clubFx.skyLasers.push(m); }
+  for (let i = 0; i < (LOW ? 8 : 30); i++) { const n = LOW ? 8 : 30, m = makeBeam(NEON[i % 4], 2.4, 800); m.position.set(B - 6, DH + 36, Z + (i - (n - 1) / 2) * (LOW ? 16 : 4.8)); clubGrp.add(m); m.userData.i = i; clubFx.skyLasers.push(m); }
   // flame columns along the deck front
   for (let i = 0; i < 10; i++) { const g = new THREE.Group(); g.position.set(F + .8, DH, Z - HW + 4 + i * (HW * 2 - 8) / 9); clubGrp.add(g);
     add(new THREE.CylinderGeometry(.35, .45, .6, 10), mat('#222'), g.position.x, DH + .3, g.position.z);
