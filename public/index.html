@@ -257,6 +257,10 @@ body.riding #toast{top:calc(160px + env(safe-area-inset-top,0px))}
     <div class="seg kale-row"><button id="festSynth" type="button">기본 합성 EDM</button><button id="festMute" type="button">음악 끄기</button></div>
   </div>
   <div>
+    <p class="group-label">가 보기</p>
+    <div class="seg kale-row"><button id="goClub" type="button">실내 클럽 입구</button><button id="goTower" type="button">스카이 타워</button></div>
+  </div>
+  <div>
     <p class="group-label">무대 꾸미기</p>
     <div class="seg kale-row"><button id="festStatue" type="button">동상: 홀로그램 여신</button><button id="festStage" type="button">무대: 산호 성</button></div>
   </div>
@@ -722,6 +726,7 @@ pond.scale.set(22, 1, 34); pond.position.set(PITCH - 6, .12, -2); scene.add(pond
   const DEP = [18, 21, 24, 27], blocks = [];
   for (let i = -6; i <= 6; i++) for (let j = -6; j <= 6; j++) {
     if (j === 0 && Math.abs(i) <= 1) continue;
+    if (i === 2 && j === 1) continue; // the sky tower's plaza
     const di = (rand() * 4) | 0;
     const mesh = new THREE.Mesh(geos[di], [roofs[0], facade]);
     mesh.position.set(i * PITCH, 0, j * PITCH); mesh.receiveShadow = true; mesh.castShadow = true; scene.add(mesh);
@@ -1386,9 +1391,9 @@ const clampX = x => Math.min(BOUNDS.x1, Math.max(BOUNDS.x0, x)), clampZ = z => M
 // city blocks are solid: chamfered squares of side S every PITCH metres (the basilica block and the two parks are open)
 function blockedAt(x, z, pad = .7) {
   if (Math.hypot(x - SKY.x, z - SKY.z) < 8.5 + pad) return true;
-  if (clubBlocked(x, z, pad)) return true;
+  if (clubBlocked(x, z, pad) || towerBlocked(x, z, pad) || clubHouseBlocked(x, z, pad)) return true;
   const i = Math.round(x / PITCH), j = Math.round(z / PITCH);
-  if (Math.abs(i) > 6 || Math.abs(j) > 6 || (j === 0 && Math.abs(i) <= 1)) return false;
+  if (Math.abs(i) > 6 || Math.abs(j) > 6 || (j === 0 && Math.abs(i) <= 1) || (i === 2 && j === 1)) return false;
   const dx = Math.abs(x - i * PITCH), dz = Math.abs(z - j * PITCH), h = S / 2 + pad;
   return dx < h && dz < h && dx + dz < 2 * h - CH;
 }
@@ -1477,7 +1482,7 @@ function startWalk() {
   sendPresence(true);
 }
 function stopWalk() {
-  setRide(0); setFightEnabled(false); showControls(false); setNav(true);
+  leavePocketHard(); setRide(0); setFightEnabled(false); showControls(false); setNav(true);
   walking = false; myAvatar.visible = false; dest = null; destMark.visible = false;
   walkBtn.setAttribute('aria-pressed', 'false'); walkBtn.textContent = '순례 시작'; bowBtn.disabled = candleBtn.disabled = danceBtn.disabled = true;
   hintEl.textContent = hint0; sendPresence(true);
@@ -1561,7 +1566,7 @@ function updatePeers(dt, now) {
   const a = 1 - Math.exp(-dt * 8);
   for (const v of peerViews.values()) {
     const g = v.g, dx = v.tx - g.position.x, dz = v.tz - g.position.z, moving = Math.hypot(dx, dz) > .05;
-    g.visible = (!tourOn || (!!tourSpot && v.s === tourSpot.id)) && ((v.ty || 0) > SKY.room - 60) === inChamber; // inside a photo, show only people standing in the same photo
+    g.visible = (!tourOn || (!!tourSpot && v.s === tourSpot.id)) && peerZone(v.ty || 0) === (pocket === 'club' ? 2 : inChamber ? 1 : 0); // inside a photo, show only people standing in the same photo
     g.position.x += dx * a; g.position.z += dz * a; g.position.y += ((v.ty || 0) - g.position.y) * a;
     let dr = v.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * a;
     g.userData.body.position.y = moving && !g.userData.model3d ? Math.abs(Math.sin(now / 140)) * .08 : 0;
@@ -1653,6 +1658,7 @@ const vF = new THREE.Vector3(), vR = new THREE.Vector3(), vMove = new THREE.Vect
 function updateWalk(dt, now) {
   if (!walking) return;
   if (rideKind) { updateRide(dt, now); return; }
+  if (pocket === 'lift') { updateLift(now); animate3D(myAvatar, false, dt, false); return; }
   let fwd = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0), side = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0);
   if (joy.on) { fwd = joy.y; side = joy.x; }
   vMove.set(0, 0, 0);
@@ -1664,19 +1670,20 @@ function updateWalk(dt, now) {
   const moving = vMove.lengthSq() > 0;
   if (moving && !tween) {
     const jm = joy.on ? Math.min(1, Math.hypot(joy.x, joy.y)) : 1, step = Math.min(vMove.length(), (keys.shift || boostHeld ? 9 : 3.4) * jm * dt * (performance.now() < domainSlowUntil ? .3 : 1)); vMove.normalize().multiplyScalar(step);
-    const [nx, nz] = clampToSpot(myPos.x + vMove.x, myPos.z + vMove.z);
+    const [nx, nz] = pocket ? pocketClamp(myPos.x + vMove.x, myPos.z + vMove.z) : clampToSpot(myPos.x + vMove.x, myPos.z + vMove.z);
     vDelta.set(nx - myPos.x, 0, nz - myPos.z); myPos.x = nx; myPos.z = nz;
     camera.position.add(vDelta); controls.target.add(vDelta);
     const want = Math.atan2(vMove.x, vMove.z); let dr = want - myRot; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); myRot += dr * Math.min(1, dt * 10);
   }
-  if (!tween) controls.target.set(myPos.x, 1.5, myPos.z);
-  myAvatar.position.copy(myPos); myAvatar.rotation.y = myRot;
+  if (!tween) controls.target.set(myPos.x, 1.5 + myAlt, myPos.z);
+  myAvatar.position.copy(myPos); myAvatar.position.y = myAlt; myAvatar.rotation.y = myRot;
   myAvatar.userData.body.position.y = moving && !myAvatar.userData.model3d ? Math.abs(Math.sin(now / 140)) * .08 : 0;
   animate3D(myAvatar, moving, dt, !!keys.shift);
   myAvatar.userData.body.rotation.x = bowAngle(bowStart, now);
   faceCamera(myAvatar, danceAnim(myAvatar.userData.body, danceStart, now));
   postPose(myAvatar, now, 0, 0);
-  setInside(insideAt(myPos.x, myPos.z));
+  setInside(!pocket && insideAt(myPos.x, myPos.z));
+  updatePocketDoors(now);
   sendPresence(false);
 }
 function updateCandles(now) {
@@ -2867,7 +2874,7 @@ let lookSave = null, skyLook = null;
 const _lk = new THREE.Vector3();
 function lookClamp() {
   if (!walking || tourOn) return;
-  const groundY = (RIDES[rideKind] && RIDES[rideKind].fly ? myAlt : 0) + .35;
+  const groundY = (pocket || (RIDES[rideKind] && RIDES[rideKind].fly) ? myAlt : 0) + .35;
   _lk.subVectors(camera.position, controls.target); const len = _lk.length(); if (len < 1e-3) return;
   const below = _lk.y < 0;
   myAvatar.visible = !(_lk.y < -.25 * len); // looking up from under your own head: hide yourself so the sky is clear
@@ -2882,7 +2889,7 @@ function toggleSkyLook() {
   const pol = up ? Math.PI * .8 : Math.PI * .4, dist = up ? 1.6 : (skyLook || 11);
   if (up) skyLook = Math.max(6, _lk.length()); else skyLook = null;
   const p1 = new THREE.Vector3().setFromSphericalCoords(dist, pol, az).add(controls.target);
-  if (up) p1.y = Math.max(p1.y, (RIDES[rideKind] && RIDES[rideKind].fly ? myAlt : 0) + .4);
+  if (up) p1.y = Math.max(p1.y, (pocket || (RIDES[rideKind] && RIDES[rideKind].fly) ? myAlt : 0) + .4);
   tween = { p0: camera.position.clone(), t0: controls.target.clone(), p1, t1: controls.target.clone(), s: performance.now(), d: 900 };
   const b = document.getElementById('skyLookBtn'); if (b) { b.setAttribute('aria-pressed', up ? 'true' : 'false'); b.textContent = up ? '시야 되돌리기 (V)' : '하늘 보기 (V)'; }
   toast(up ? '하늘을 올려다봐요 · 마우스를 끌면 고개를 돌릴 수 있어요' : '원래 시야로 돌아왔어요');
@@ -3481,14 +3488,14 @@ function updateStageFx(now, dt, t, beat, kick, sec, lvl, bar, camD) {
     const prev = renderer.getRenderTarget(), au = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;
     renderer.setRenderTarget(I.rt); renderer.render(scene, cam); renderer.setRenderTarget(prev); renderer.shadowMap.autoUpdate = au; }
   // bloom only near the festival at night, and only on capable machines
-  const want = !LOW && camD < 520 && night > .25;
+  const want = !LOW && ((camD < 520 && night > .25) || pocket === 'club');
   if (want && !composer && THREE.EffectComposer && THREE.UnrealBloomPass) {
     const pr = renderer.getPixelRatio(), rt = new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { samples: 4, type: THREE.HalfFloatType });
     composer = new THREE.EffectComposer(renderer, rt); composer.addPass(new THREE.RenderPass(scene, camera));
     bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1, .6, .7); composer.addPass(bloomPass);
     composer.addPass(new THREE.ShaderPass(THREE.GammaCorrectionShader));
     addEventListener('resize', () => composer && composer.setSize(innerWidth, innerHeight)); }
-  festBloom = want && composer ? (.55 + .75 * night) * (1 - Math.min(1, Math.max(0, camD - 380) / 140)) + kick * .25 * lvl : 0;
+  festBloom = want && composer ? (.55 + .75 * (pocket === 'club' ? 1 : night)) * (1 - Math.min(1, Math.max(0, camD - 380) / 140)) + kick * .25 * lvl : 0;
 }
 
 // auto night near the festival: the clock slides to night as you walk up and back to where it was when you leave
@@ -3620,13 +3627,289 @@ function updateClub(now, dt) {
     for (const mt of w) { mt.emissive.setHSL(hue, 1, .5); mt.emissiveIntensity = inten; }
     updateStageExtras(t, kick, lvl); }
   const G = clubFx.goddess; if (G) updateStatue(G, dt, t, kick, lvl, sec, nightNow, beat);
+  if (pocket === 'club') updateClubRoom(now, dt, t, beat, kick, sec, lvl, bar);
   if (clubFx.led && camD < 400 && now - clubFx.led.last > 33) { clubFx.led.last = now; renderScreen3D(now, beat, kick, sec, lvl); }
   if (pd < 120 && walking && (!actx || actx.state !== 'running') && now - clubAudio.poke > 2000) { clubAudio.poke = now; ac(); }
-  const near = inClub || pd < 60, vol = !walking ? Math.max(0, 1 - camD / 200) * .5 : inClub ? 1 : Math.max(0, 1 - Math.max(0, pd - 40) / 160) * .8;
-  updateFestYT(now, Math.min(1, vol * 1.15), (walking ? pd < 260 : camD < 300));
+  const near = pocket === 'club' || inClub || pd < 60, vol = pocket === 'club' ? 1 : !walking ? Math.max(0, 1 - camD / 200) * .5 : inClub ? 1 : Math.max(0, 1 - Math.max(0, pd - 40) / 160) * .8;
+  updateFestYT(now, Math.min(1, vol * 1.15), pocket === 'club' || (walking ? pd < 260 : camD < 300));
   clubAudioTick(now, festYT.v ? 0 : vol, near);
   if (me && !inClub && pd < 110 && now - clubHintAt > 30000) { clubHintAt = now; toast('네온 펄스 페스티벌 · 연못 동쪽 무대 앞으로 가 보세요'); }
 }
+
+
+// ================= places you walk in above the ground: the indoor club (a pocket high in the sky), the sky elevator, the sky lounge =================
+let pocket = null, pocketCool = 0;
+const pocketHud = document.createElement('div');
+pocketHud.style.cssText = 'position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:5;padding:8px 16px;border-radius:12px;background:rgba(20,24,30,.62);color:#fff;font:600 14px/1.4 system-ui,sans-serif;text-align:center;pointer-events:none;max-width:calc(100vw - 32px)';
+pocketHud.hidden = true; document.body.append(pocketHud);
+const neonSign = (text, w, h, color, bg = 'rgba(0,0,0,0)') => { const c = cv(1024, Math.round(1024 * h / w)), x = c.getContext('2d'); x.fillStyle = bg; x.fillRect(0, 0, c.width, c.height);
+  x.font = `900 ${Math.round(c.height * .52)}px system-ui,sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
+  for (const [b, col] of [[40, color], [16, color], [0, '#ffffff']]) { x.shadowColor = color; x.shadowBlur = b; x.fillStyle = col; x.fillText(text, c.width / 2, c.height / 2); }
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, transparent: true, fog: false, side: THREE.DoubleSide, depthWrite: false })); };
+const pm = (c, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .5, metalness: .4 }, o));
+function pocketCam(dist, h) { camera.position.set(myPos.x - Math.sin(myRot) * dist, myAlt + h, myPos.z - Math.cos(myRot) * dist); controls.target.set(myPos.x, myAlt + 1.5, myPos.z); }
+function pocketPlace(x, z, alt, rot) { myPos.x = x; myPos.z = z; myAlt = alt; altV = 0; rideV = 0; myRot = rot; dest = null; destMark.visible = false; myAvatar.position.set(x, alt, z); myAvatar.rotation.y = rot; }
+function setPocket(p) {
+  pocket = p; tween = null; pocketCool = performance.now() + 2500;
+  const lim = p === 'lift' ? [.6, 2.6] : p ? [1.5, 9] : [2.5, 70];
+  controls.minDistance = lim[0]; controls.maxDistance = lim[1];
+  clubRoom.visible = p === 'club'; if (typeof clubGrp !== 'undefined') clubGrp.visible = p !== 'club';
+  myAvatar.userData.label.visible = showLabels && p !== 'lift';
+  pocketHud.hidden = !p; if (p === 'club') pocketHud.textContent = 'NEON PULSE 실내 클럽 · 뒤쪽 초록 EXIT 문으로 나가요';
+  if (p === 'lounge') pocketHud.textContent = '스카이 라운지 470m · 엘리베이터로 돌아가면 내려가요';
+  sendPresence(true);
+}
+// leave whatever pocket you are in and stand on the ground outside it (stopping the walk, teleporting, ...)
+function leavePocketHard() {
+  if (!pocket) return; const p = pocket; setPocket(null);
+  if (p === 'club') pocketPlace(CLUBIN.door[0], CLUBIN.door[1] + 2.5, 0, 0); else pocketPlace(TOWER.lx - 4, TOWER.lz, 0, -Math.PI / 2);
+  pocketCam(8, 4);
+}
+
+// ---------------- the indoor club ----------------
+// outside: a black box with a neon front just south of the festival field; inside: a pocket club room built high above the same spot
+const CLUBIN = { x: 150, z: -54, y: 2200, W: 60, D: 40, H: 14, door: [150, -48.4] };
+function clubHouseBlocked(x, z, pad) { return Math.abs(x - CLUBIN.x) < 10 + pad && z > CLUBIN.z - 5 - pad && z < CLUBIN.z + 5 + pad; }
+{ const g = new THREE.Group(); g.position.set(CLUBIN.x, 0, CLUBIN.z); scene.add(g);
+  const b = new THREE.Mesh(new THREE.BoxGeometry(20, 9, 10), pm('#0c0c12', { roughness: .4, metalness: .6 })); b.position.y = 4.5; b.castShadow = b.receiveShadow = true; g.add(b);
+  const trimM = new THREE.MeshBasicMaterial({ color: '#ff2bd6', fog: false }); clubHouseTrim = trimM;
+  for (const [w, h, x, y] of [[20.2, .18, 0, 9], [20.2, .18, 0, .1], [.18, 9, -10, 4.5], [.18, 9, 10, 4.5]]) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, .2), trimM); m.position.set(x, y, 5.02); g.add(m); }
+  const door = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 4.6), new THREE.MeshBasicMaterial({ color: '#05050a' })); door.position.set(0, 2.3, 5.03); g.add(door);
+  const frame = new THREE.Mesh(new THREE.TorusGeometry(1.9, .12, 8, 40, Math.PI), new THREE.MeshBasicMaterial({ color: '#00e5ff', fog: false })); frame.position.set(0, 4.5, 5.05); g.add(frame);
+  for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(.18, 4.5, .18), frame.material); p.position.set(s * 1.9, 2.25, 5.05); g.add(p); }
+  const sign = neonSign('NEON PULSE CLUB', 14, 2.2, '#ff2bd6'); sign.position.set(0, 7.2, 5.1); g.add(sign);
+  const sub = neonSign('실내 스테이지 · 들어가기', 8, 1.1, '#00e5ff'); sub.position.set(0, 5.6, 5.1); g.add(sub);
+}
+var clubHouseTrim;
+const clubRoom = new THREE.Group(); clubRoom.visible = false; scene.add(clubRoom);
+const crFx = { built: false };
+function buildClubRoom() {
+  crFx.built = true; const R = clubRoom, W = CLUBIN.W, D = CLUBIN.D, H = CLUBIN.H; R.position.set(CLUBIN.x, CLUBIN.y, CLUBIN.z);
+  const dark = pm('#0a0a10', { roughness: .55, metalness: .35 }), truss = pm('#2b2a33', { metalness: .9, roughness: .3 });
+  const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); R.add(o); return o; };
+  box(W, .4, D, dark, 0, -.2, 0); box(W, .4, D, dark, 0, H + .2, 0);
+  box(.4, H, D, dark, -W / 2, H / 2, 0); box(.4, H, D, dark, W / 2, H / 2, 0); box(W, H, .4, dark, 0, H / 2, -D / 2); box(W, H, .4, dark, 0, H / 2, D / 2);
+  // LED dance floor: 2 m tiles, three patterns that change every 4 bars
+  const floorU = crFx.floorU = { t: { value: 0 }, kick: { value: 0 }, mode: { value: 0 } };
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(48, 36).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({ uniforms: floorU, fog: false,
+    vertexShader: 'varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform float t, kick, mode; varying vec2 vP;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      vec3 hsv(float hh, float s, float v){ vec3 k = clamp(abs(mod(hh * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); return v * mix(vec3(1.0), k, s); }
+      void main(){ vec2 c = floor(vP / 2.0), f = fract(vP / 2.0); float edge = step(.06, f.x) * step(.06, f.y) * step(f.x, .94) * step(f.y, .94);
+        float r = length(c), a;
+        if (mode < .5) a = step(.6, h(c + floor(t * 2.133)));
+        else if (mode < 1.5) a = step(.5, fract(r * .25 - t * .5));
+        else a = step(.5, fract((c.x + c.y) * .125 + t * .4));
+        vec3 col = hsv(fract(h(c) * .3 + t * .05 + r * .03), .9, 1.0);
+        gl_FragColor = vec4(col * (0.06 + a * (0.45 + 0.4 * kick)) * edge + vec3(0.015), 1.0); }` }));
+  fl.position.set(-4, .02, 0); R.add(fl);
+  // LED strips on the side walls
+  crFx.strips = [];
+  for (let i = 0; i < 14; i++) for (const s of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(.25, H - 2, .1), new THREE.MeshBasicMaterial({ color: '#ff2bd6', fog: false })); m.position.set(-26 + i * 3.6, H / 2, s * (D / 2 - .25)); m.userData.i = i; R.add(m); crFx.strips.push(m); }
+  // stage, DJ booth, the LED wall showing the same live visuals as the festival screen, LED columns
+  box(8, 1.2, D - 2, pm('#15151d'), 26, .6, 0);
+  crFx.edge = new THREE.Mesh(new THREE.BoxGeometry(.15, .15, D - 2), new THREE.MeshBasicMaterial({ color: '#00e5ff', fog: false })); crFx.edge.position.set(22, 1.22, 0); R.add(crFx.edge);
+  box(1.6, 1.3, 6, pm('#0c0c12', { metalness: .7 }), 25, 1.85, 0);
+  crFx.booth = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.1), new THREE.MeshBasicMaterial({ color: '#00e5ff', fog: false })); crFx.booth.position.set(24.18, 1.85, 0); crFx.booth.rotation.y = -Math.PI / 2; R.add(crFx.booth);
+  const led = new THREE.Mesh(new THREE.PlaneGeometry(D - 8, 9.5), new THREE.MeshBasicMaterial({ map: scr.rt ? scr.rt.texture : null, color: scr.rt ? '#ffffff' : '#101018', fog: false })); led.position.set(29.7, 7.4, 0); led.rotation.y = -Math.PI / 2; R.add(led); crFx.led = led;
+  crFx.cols = [-1, 1].map(s => { const m = new THREE.Mesh(new THREE.BoxGeometry(.3, 11, 2.2), new THREE.MeshBasicMaterial({ color: '#7a5cff', fog: false })); m.position.set(29.5, 6.7, s * (D / 2 - 2)); R.add(m); return m; });
+  const title = neonSign('NEON PULSE CLUB', 16, 2.4, '#ff2bd6'); title.position.set(29.6, 13, 0); title.rotation.y = -Math.PI / 2; R.add(title);
+  // truss: lasers over the stage, moving heads over the floor
+  box(.5, .5, D - 2, truss, 27, 12.5, 0); box(W - 8, .4, .4, truss, -2, 12.9, -8); box(W - 8, .4, .4, truss, -2, 12.9, 8);
+  crFx.lasers = [];
+  for (let e = 0; e < 9; e++) { const g = new THREE.Group(); g.position.set(26.6, 12, -16 + e * 4); R.add(g); const fan = [];
+    for (let b = 0; b < (LOW ? 6 : 12); b++) { const m = makeBeam(NEON[e % 3], .1, 60); m.userData.b = b; g.add(m); fan.push(m); }
+    const dot = festGlow(NEON[e % 3], 1); g.add(dot); crFx.lasers.push({ g, fan, e, dot }); }
+  crFx.heads = [];
+  for (let i = 0; i < 10; i++) { const g = new THREE.Group(); g.position.set(-24 + (i % 5) * 10, 12.5, i < 5 ? -8 : 8); R.add(g);
+    const beam = makeVolBeam(15, 2.4); g.add(beam); const lens = festGlow('#ffffff', 1); g.add(lens); crFx.heads.push({ g, beam, lens, i }); }
+  // the mirror ball and the specks of light it throws over the walls, floor and ceiling
+  crFx.ball = new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 2), new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 1, roughness: .06, flatShading: true, emissive: '#555566', emissiveIntensity: .3 }));
+  crFx.ball.position.set(-4, 10.8, 0); R.add(crFx.ball); box(.05, 1.6, .05, truss, -4, 12.8, 0);
+  const sN = LOW ? 60 : 180; crFx.sDirs = []; for (let i = 0; i < sN; i++) crFx.sDirs.push(new THREE.Vector3().randomDirection());
+  crFx.sPos = new Float32Array(sN * 3); const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(crFx.sPos, 3));
+  crFx.specks = new THREE.Points(sg, new THREE.PointsMaterial({ map: glowTex, size: .55, color: '#ffffff', transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })); crFx.specks.frustumCulled = false; R.add(crFx.specks);
+  // haze
+  crFx.haze = []; for (let i = 0; i < (LOW ? 8 : 18); i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: festSmokeTex, color: '#9fdcff', transparent: true, opacity: .07, depthWrite: false, fog: false }));
+    s.position.set(-24 + Math.random() * 46, 3 + Math.random() * 8, -16 + Math.random() * 32); s.scale.setScalar(10 + Math.random() * 8); s.userData.ph = Math.random() * 6; R.add(s); crFx.haze.push(s); }
+  // the exit on the back wall
+  const exitDoor = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 4.4), new THREE.MeshBasicMaterial({ color: '#02140a' })); exitDoor.position.set(-W / 2 + .25, 2.2, 0); exitDoor.rotation.y = Math.PI / 2; R.add(exitDoor);
+  const ex = neonSign('EXIT · 나가는 문', 5, 1, '#2bff7a'); ex.position.set(-W / 2 + .3, 5.2, 0); ex.rotation.y = Math.PI / 2; R.add(ex);
+  // the crowd: the festival's photo cut-outs, a smaller dancing crowd
+  const cr = clubFx.crowd; crFx.crowd = null;
+  if (cr) { const n = Math.min(cr.crowd.count, LOW ? 40 : 110), m = new THREE.InstancedMesh(cr.crowd.geometry, cr.crowd.material, n), av = cr.crowd.geometry.getAttribute('aVar'); m.frustumCulled = false; R.add(m);
+    const spots = []; for (let i = 0; i < n; i++) { let x, z, k = 0; do { x = -22 + Math.random() * 42; z = -17 + Math.random() * 34; } while ((Math.hypot(x + 25, z) < 6 || Math.hypot(x + 4, z) < 2.5) && k++ < 20); spots.push([x, z, Math.random() * 6, .92 + Math.random() * .16, Math.random(), av ? av.getX(i) : i % 4]); }
+    crFx.crowd = { m, spots, VAR_H: cr.VAR_H }; }
+  // two coloured lights so the robot DJ and the room's metal catch the show
+  crFx.lights = [new THREE.PointLight('#ff2bd6', 2, 45), new THREE.PointLight('#00e5ff', 2, 45)]; crFx.lights[0].position.set(20, 9, -8); crFx.lights[1].position.set(-6, 9, 8); crFx.lights.forEach(l => R.add(l));
+  loadRide(12).then(wrap => { if (!wrap) return; const r = THREE.SkeletonUtils.clone(wrap); r.traverse(o => { if (o.userData && o.userData.flame) o.visible = false; });
+    r.scale.setScalar(3.4 / (wrap.userData.h || 3.4)); r.position.set(26, 1.2, 0); r.rotation.y = -Math.PI / 2; R.add(r); crFx.dj = r; });
+}
+const _cv3 = new THREE.Vector3(), _cq = new THREE.Quaternion(), _cs = new THREE.Vector3(), _cm4 = new THREE.Matrix4(), _cyAx = new THREE.Vector3(0, 1, 0);
+function updateClubRoom(now, dt, t, beat, kick, sec, lvl, bar) {
+  if (!crFx.built) return; const W = CLUBIN.W, D = CLUBIN.D, H = CLUBIN.H;
+  if (scr.rt && crFx.led.material.map !== scr.rt.texture) { crFx.led.material.map = scr.rt.texture; crFx.led.material.color.set('#ffffff'); crFx.led.material.needsUpdate = true; }
+  crFx.floorU.t.value = t; crFx.floorU.kick.value = kick * lvl; crFx.floorU.mode.value = Math.floor(bar / 4) % 3;
+  for (const m of crFx.strips) m.material.color.setHSL((t * .1 + m.userData.i * .07) % 1, 1, .25 + .35 * kick * lvl);
+  crFx.cols.forEach((m, i) => m.material.color.setHSL((t * .08 + i * .5) % 1, 1, .3 + .3 * kick));
+  crFx.edge.material.color.setHSL((t * .05) % 1, 1, .4 + .3 * kick); crFx.booth.material.color.setHSL((.52 + t * .05) % 1, 1, .4 + kick * .3);
+  for (const L of crFx.lasers) { const on = sec !== 'break' || L.e % 3 === 0, sp = sec === 'drop' ? 1.6 : .6; L.g.visible = on; if (!on) continue;
+    for (const m of L.fan) { const b = m.userData.b, n = L.fan.length, spread = (b / (n - 1) - .5) * (sec === 'drop' ? 1.4 : .9);
+      m.rotation.set((sec === 'drop' && bar % 4 >= 2 ? .25 : .08) + Math.sin(t * sp + L.e + b * .2) * .12, -Math.PI / 2 + spread + Math.sin(t * sp * .8 + L.e) * .35, 0);
+      m.material.color.setHSL(laserHue(L, b, n, t, bar), 1, .55); m.material.opacity = .55 * (.7 + .3 * kick); if (b === 0) L.dot.material.color.copy(m.material.color); } }
+  for (const h of crFx.heads) { h.g.rotation.y = Math.sin(t * (sec === 'drop' ? 1.1 : .45) + h.i * 1.3) * 1.3; h.beam.rotation.set(Math.PI / 2 - .55 - Math.sin(t * .7 + h.i) * .25, 0, 0);
+    const c = h.beam.material.uniforms.color.value; c.setHSL((t * .07 + h.i * .1) % 1, .9, .6); h.beam.material.uniforms.k.value = (.5 + .9 * kick) * (sec === 'break' ? .5 : 1); h.lens.material.color.copy(c); }
+  crFx.ball.rotation.y = t * .5; const bp = crFx.ball.position, a = t * .5, ca = Math.cos(a), sa = Math.sin(a);
+  crFx.sDirs.forEach((d, i) => { const dx = d.x * ca - d.z * sa, dz = d.x * sa + d.z * ca, dy = d.y;
+    const tx = dx > 0 ? (W / 2 - .3 - bp.x) / dx : (-W / 2 + .3 - bp.x) / dx, ty = dy > 0 ? (H - .3 - bp.y) / dy : (.06 - bp.y) / dy, tz = dz > 0 ? (D / 2 - .3) / dz : (-D / 2 + .3) / dz, k = Math.min(tx, ty, tz);
+    crFx.sPos.set([bp.x + dx * k, bp.y + dy * k, bp.z + dz * k], i * 3); });
+  crFx.specks.geometry.attributes.position.needsUpdate = true; crFx.specks.material.opacity = sec === 'break' ? .95 : .35 + .3 * kick;
+  for (const s of crFx.haze) { s.material.rotation = t * .05 + s.userData.ph; s.material.color.setHSL((t * .06 + s.userData.ph) % 1, .6, .5 + .2 * kick); }
+  if (crFx.crowd) { const C = crFx.crowd; C.spots.forEach(([x, z, ph, sc, r, v], i) => { const hop = Math.max(0, Math.sin((beat + r * .2) * Math.PI * 2)) * (.05 + .3 * lvl) * (r < .8 ? 1 : .4);
+      _cv3.set(x, hop, z); _cq.identity(); _cs.setScalar(sc * C.VAR_H[v]); _cm4.compose(_cv3, _cq, _cs); C.m.setMatrixAt(i, _cm4); }); C.m.instanceMatrix.needsUpdate = true; }
+  if (crFx.dj) { const b = beat * Math.PI; crFx.dj.position.y = 1.2 + Math.abs(Math.sin(b)) * .06; crFx.dj.rotation.set(Math.sin(b) * .08 * (.5 + lvl), -Math.PI / 2 + Math.sin(b / 4) * .18, 0); }
+  crFx.lights[0].color.setHSL((t * .1) % 1, 1, .55); crFx.lights[1].color.setHSL((t * .1 + .5) % 1, 1, .55); crFx.lights.forEach(l => { l.intensity = 1.2 + 1.8 * kick * lvl; });
+}
+function enterClubRoom() {
+  if (!crFx.built) buildClubRoom();
+  pocketPlace(CLUBIN.x - 25, CLUBIN.z, CLUBIN.y, Math.PI / 2); setPocket('club'); pocketCam(6, 3);
+  screenFx('#ff2bd6', 'NEON PULSE CLUB'); toast('실내 클럽에 들어왔어요 · 무대 앞으로 가서 춤춰요 (비보잉 버튼) · 나갈 땐 뒤쪽 EXIT 문');
+}
+function exitClubRoom() { setPocket(null); pocketPlace(CLUBIN.door[0], CLUBIN.door[1] + 2.5, 0, 0); pocketCam(8, 4); screenFx('#00e5ff', 'NEON PULSE FESTIVAL'); }
+
+// ---------------- the sky tower: an original tapering supertall with a glass sky elevator and a sky lounge ----------------
+// (its own design: a rounded-square plan that slims and twists as it rises, a crown of four leaning fins)
+const TOWER = { x: 2 * PITCH, z: PITCH, H: 500, R0: 33, LY: 470 };
+TOWER.lx = TOWER.x - 40; TOWER.lz = TOWER.z;
+const towerR = y => TOWER.R0 * (1 - .55 * Math.pow(Math.min(1, Math.max(0, y) / TOWER.H), 1.6));
+const towerTw = y => y / TOWER.H * .7;
+function towerPt(y, a, k = 1) { const r = towerR(y) * k, tw = towerTw(y), c = Math.cos(a), s = Math.sin(a);
+  const px = r * Math.sign(c) * Math.pow(Math.abs(c), .5), pz = r * Math.sign(s) * Math.pow(Math.abs(s), .5); return [px * Math.cos(tw) - pz * Math.sin(tw), px * Math.sin(tw) + pz * Math.cos(tw)]; }
+function towerGeo(y0, y1, steps, M, k = 1) {
+  const pos = [], uv = [], idx = [];
+  for (let i = 0; i <= steps; i++) { const y = y0 + (y1 - y0) * i / steps; for (let m = 0; m <= M; m++) { const [x, z] = towerPt(y, m / M * Math.PI * 2, k); pos.push(x, y, z); uv.push(m / M * 10, y / 33.6); } }
+  for (let i = 0; i < steps; i++) for (let m = 0; m < M; m++) { const a = i * (M + 1) + m, b = a + M + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+function towerShape(y, k = 1, hole) { const s = new THREE.Shape(); for (let m = 0; m <= 96; m++) { const [x, z] = towerPt(y, m / 96 * Math.PI * 2, k); m ? s.lineTo(x, -z) : s.moveTo(x, -z); } if (hole) s.holes.push(hole); return new THREE.ShapeGeometry(s, 2).rotateX(-Math.PI / 2); }
+function towerBlocked(x, z, pad) {
+  const dx = x - TOWER.x, dz = z - TOWER.z; if (Math.abs(dx) > 70 || Math.abs(dz) > 70) return false;
+  const r = TOWER.R0 + pad; if ((dx / r) ** 4 + (dz / r) ** 4 < 1) return true;
+  return Math.abs(x - TOWER.lx) < 2.3 + pad && Math.abs(z - TOWER.lz) < 2.3 + pad;
+}
+const towerGrp = new THREE.Group(); scene.add(towerGrp);
+const towerFx = { beacons: [] };
+{
+  const T = TOWER, LY = T.LY;
+  const [glassMap, winMap] = (() => { const c = cv(256, 256), x = c.getContext('2d'), e = cv(256, 256), ex = e.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, '#6a879e'); g.addColorStop(.5, '#3f586e'); g.addColorStop(1, '#7392ab'); x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+    ex.fillStyle = '#000'; ex.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { x.fillStyle = `rgba(255,255,255,${.03 + Math.random() * .09})`; x.fillRect(i * 32 + 2, j * 32 + 2, 28, 28);
+      if (Math.random() < .42) { ex.globalAlpha = .45 + Math.random() * .55; ex.fillStyle = Math.random() < .7 ? '#ffd9a0' : '#d6ecff'; ex.fillRect(i * 32 + 3, j * 32 + 4, 26, 25); ex.globalAlpha = 1; } }
+    x.fillStyle = '#cdd6de'; for (let i = 0; i <= 8; i++) { x.fillRect(i * 32 - 1, 0, 2, 256); x.fillRect(0, i * 32 - 1, 256, 3); }
+    return [c, e].map(cc => { const t = new THREE.CanvasTexture(cc); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso; return t; }); })();
+  const body = towerFx.mat = new THREE.MeshStandardMaterial({ map: glassMap, emissiveMap: winMap, emissive: '#ffffff', emissiveIntensity: 0, metalness: .55, roughness: .2 });
+  const metal = pm('#8d96a0', { metalness: .85, roughness: .3 }), darkM = pm('#2a2e35', { metalness: .7, roughness: .4 });
+  const add = (geo, m, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); towerGrp.add(o); return o; };
+  towerGrp.position.set(T.x, 0, T.z);
+  add(towerGeo(0, LY - 4, 110, 128), body); add(towerGeo(LY + 8, T.H, 8, 128), body);
+  add(towerGeo(LY - 4, LY, 1, 128, 1.01), darkM); add(towerGeo(LY + 6, LY + 8, 1, 128, 1.01), darkM);
+  add(towerShape(T.H), darkM, 0, T.H, 0);
+  // floor bands every 42 m catch the light
+  for (let y = 42; y < LY - 10; y += 42) add(towerGeo(y, y + .8, 1, 128, 1.006), metal);
+  // the crown: four slim fins leaning in from the four lobes, a mast and a red beacon
+  const finM = towerFx.finMat = pm('#c9d3dc', { metalness: .8, roughness: .25, emissive: '#bfe6ff', emissiveIntensity: 0 });
+  for (let q = 0; q < 4; q++) { const a = q * Math.PI / 2, [x, z] = towerPt(T.H - 30, a, .96), piv = new THREE.Group(); piv.position.set(x, T.H - 30, z); piv.rotation.y = -Math.atan2(z, x); towerGrp.add(piv);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(1.4, 100, 6), finM); fin.position.set(0, 50, 0); const lean = Math.atan2(Math.hypot(x, z) - 2.5, 100); const tilt = new THREE.Group(); tilt.rotation.z = lean; tilt.add(fin); piv.add(tilt); }
+  add(new THREE.CylinderGeometry(.5, 1.2, 40, 10), metal, 0, T.H + 80, 0);
+  const bc = festGlow('#ff2a2a', 9); bc.position.set(0, T.H + 101, 0); towerGrp.add(bc); towerFx.beacons.push(bc);
+  for (const y of [150, 300, 420]) for (let q = 0; q < 4; q++) { const [x, z] = towerPt(y, q * Math.PI / 2 + Math.PI / 4, 1.02); const s = festGlow('#ff3030', 4); s.position.set(x, y, z); towerGrp.add(s); towerFx.beacons.push(s); }
+  // ---- the sky lounge (470 m): a glass drum with a bar, sofas facing out, telescopes and a glass floor ----
+  const glass = new THREE.MeshBasicMaterial({ color: '#cfeaff', transparent: true, opacity: .07, side: THREE.DoubleSide, depthWrite: false });
+  add(towerGeo(LY, LY + 6, 1, 128, 1.0), glass);
+  for (let m = 0; m < 32; m++) { const [x, z] = towerPt(LY + 3, m / 32 * Math.PI * 2, .995); add(new THREE.BoxGeometry(.18, 6, .18), metal, x, LY + 3, z); }
+  const hole = new THREE.Path(); hole.moveTo(4, -2.5); hole.lineTo(9, -2.5); hole.lineTo(9, 2.5); hole.lineTo(4, 2.5); hole.closePath();
+  const floorM = pm('#2b2420', { metalness: .2, roughness: .35 }); floorM.side = THREE.DoubleSide;
+  add(towerShape(LY, .99, hole), floorM, 0, LY, 0);
+  add(new THREE.PlaneGeometry(5, 5).rotateX(-Math.PI / 2), new THREE.MeshPhysicalMaterial({ color: '#cfefff', roughness: .02, transparent: true, opacity: .12, side: THREE.DoubleSide, depthWrite: false }), 6.5, LY - .02, 0);
+  const deckEdge = new THREE.MeshBasicMaterial({ color: '#7fdfff' }); for (const [w, d, x, z] of [[5.2, .12, 6.5, 2.55], [5.2, .12, 6.5, -2.55], [.12, 5.2, 3.95, 0], [.12, 5.2, 9.05, 0]]) add(new THREE.BoxGeometry(w, .05, d), deckEdge, x, LY + .03, z);
+  const ceil = pm('#15151a'); ceil.side = THREE.DoubleSide; add(towerShape(LY + 6, .99), ceil, 0, LY + 6, 0);
+  const warm = new THREE.MeshStandardMaterial({ color: '#2a1d14', emissive: '#ffb066', emissiveIntensity: .35, roughness: .5 });
+  add(new THREE.CylinderGeometry(2.6, 2.8, 1.1, 32), pm('#1b1b20', { metalness: .6 }), 0, LY + .55, 0);
+  add(new THREE.TorusGeometry(2.62, .06, 8, 48).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffcf7a' }), 0, LY + 1.1, 0);
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + .2, r = 11.2, g = new THREE.Group(); g.position.set(Math.cos(a) * r, LY, Math.sin(a) * r); g.rotation.y = -a - Math.PI / 2; towerGrp.add(g);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(2.6, .45, 1), warm); seat.position.set(0, .35, 0); g.add(seat); const back = new THREE.Mesh(new THREE.BoxGeometry(2.6, .8, .25), warm); back.position.set(0, .8, -.5); g.add(back); }
+  for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + Math.PI / 4, r = 14; const g = new THREE.Group(); g.position.set(Math.cos(a) * r, LY, Math.sin(a) * r); g.rotation.y = -a; towerGrp.add(g);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.06, .1, 1.3, 8), metal); leg.position.y = .65; g.add(leg); const scope = new THREE.Mesh(new THREE.CylinderGeometry(.14, .2, 1.1, 12), pm('#3a4a5a', { metalness: .8 })); scope.rotation.z = Math.PI / 2 - .25; scope.position.set(.3, 1.45, 0); g.add(scope); }
+  const lsign = neonSign('SKY LOUNGE 470m', 6, 1.1, '#ffcf7a'); lsign.position.set(0, LY + 4.6, 0); towerGrp.add(lsign); towerFx.lsign = lsign;
+  // ---- the glass sky elevator: an open frame mast beside the tower and a glass skybridge into the lounge ----
+  const lx = T.lx - T.x, lz = T.lz - T.z, top = LY + 10;
+  for (const [sx, sz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) add(new THREE.BoxGeometry(.4, top, .4), metal, lx + sx * 2.45, top / 2, lz + sz * 2.45);
+  const ringG = new THREE.InstancedMesh(new THREE.BoxGeometry(5.3, .3, .3), metal, Math.ceil(top / 20) * 2), m4 = new THREE.Matrix4(); let ri = 0;
+  for (let y = 20; y < top; y += 20) for (const sz of [-1, 1]) { m4.makeTranslation(lx, y, lz + sz * 2.45); ringG.setMatrixAt(ri++, m4); } ringG.count = ri; towerGrp.add(ringG);
+  towerFx.strips = [-1, 1].map(s => add(new THREE.BoxGeometry(.08, top, .08), new THREE.MeshBasicMaterial({ color: '#7fdfff' }), lx + 2.7, top / 2, lz + s * 2.45));
+  const bridgeL = (T.x - 14) - (T.lx + 2.2), bx = (T.lx + 2.2 - T.x) + bridgeL / 2;
+  add(new THREE.BoxGeometry(bridgeL, .3, 3.4), metal, bx, LY - .15, 0);
+  for (const s of [-1, 1]) add(new THREE.PlaneGeometry(bridgeL, 2.6), glass, bx, LY + 1.3, s * 1.7);
+  add(new THREE.PlaneGeometry(bridgeL, 3.4).rotateX(Math.PI / 2), glass, bx, LY + 2.6, 0);
+  // the cab: glass all round, so the city drops away below you on the way up
+  const cab = towerFx.cab = new THREE.Group(); cab.position.set(T.lx, 0, T.lz); scene.add(cab);
+  const cabFloor = new THREE.Mesh(new THREE.BoxGeometry(4.4, .2, 4.4), metal); cabFloor.position.y = -.1; cab.add(cabFloor);
+  const cabTop = new THREE.Mesh(new THREE.BoxGeometry(4.4, .2, 4.4), metal); cabTop.position.y = 3.3; cab.add(cabTop);
+  for (const [w, d, x, z] of [[4.4, .05, 0, 2.2], [4.4, .05, 0, -2.2], [.05, 4.4, 2.2, 0], [.05, 4.4, -2.2, 0]]) { const p = new THREE.Mesh(new THREE.BoxGeometry(w, 3.2, d), glass); p.position.set(x, 1.6, z); cab.add(p); }
+  for (const [x, z] of [[2.2, 2.2], [2.2, -2.2], [-2.2, 2.2], [-2.2, -2.2]]) { const p = new THREE.Mesh(new THREE.BoxGeometry(.12, 3.2, .12), metal); p.position.set(x, 1.6, z); cab.add(p); }
+  const cl = new THREE.Mesh(new THREE.BoxGeometry(3.6, .05, .25), new THREE.MeshBasicMaterial({ color: '#fff3d6' })); cl.position.y = 3.18; cab.add(cl);
+  // the plaza and the signs at the foot of the tower
+  const plaza = new THREE.Mesh(new THREE.PlaneGeometry(S, S).rotateX(-Math.PI / 2), pm('#cfc6b8', { metalness: 0, roughness: .9 })); plaza.position.set(0, .03, 0); plaza.receiveShadow = true; towerGrp.add(plaza);
+  const ts = neonSign('SKY TOWER · 스카이 엘리베이터', 12, 1.6, '#7fdfff', 'rgba(10,20,30,.85)'); ts.position.set(lx - 2.6, 5.2, lz); ts.rotation.y = -Math.PI / 2; towerGrp.add(ts);
+}
+function updateTower(now) {
+  const t = now / 1000; towerFx.mat.emissiveIntensity = nightNow * .9; towerFx.finMat.emissiveIntensity = nightNow * (.35 + .25 * Math.sin(t * 1.5));
+  const on = Math.floor(t * 1.2) % 2 === 0; for (const b of towerFx.beacons) b.material.opacity = on ? .95 : .15;
+  for (const s of towerFx.strips) s.material.color.setHSL((.52 + t * .03) % 1, 1, .35 + .3 * nightNow);
+  if (pocket !== 'lift') towerFx.cab.position.y = pocket === 'lounge' ? TOWER.LY : 0;
+}
+// the elevator ride: 32 s, easing in and out, the camera inside the glass cab
+const lift = { from: 0, to: 0, t0: 0, dur: 32000 };
+function startLift(up) {
+  lift.from = up ? 0 : TOWER.LY; lift.to = up ? TOWER.LY : 0; lift.t0 = performance.now();
+  pocketPlace(TOWER.lx, TOWER.lz, lift.from, -Math.PI / 2); setPocket('lift'); pocketCam(2, 1.9);
+  toast(up ? '스카이 엘리베이터 출발 · 유리 너머로 도시와 성당이 내려다보여요 · 마우스로 둘러보세요' : '지상으로 내려가요');
+}
+function updateLift(now) {
+  const k = Math.min(1, (now - lift.t0) / lift.dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2, y = lift.from + (lift.to - lift.from) * e, d = y - myAlt;
+  myAlt = y; camera.position.y += d; controls.target.set(myPos.x, myAlt + 1.5, myPos.z); towerFx.cab.position.y = myAlt;
+  myAvatar.position.set(myPos.x, myAlt, myPos.z); myAvatar.rotation.y = myRot;
+  pocketHud.textContent = `스카이 엘리베이터 · 지상 ${Math.round(myAlt)}m · ${lift.to > lift.from ? '올라가는 중' : '내려가는 중'}`;
+  if (k >= 1) { if (lift.to > 0) { pocketPlace(TOWER.lx + 4.5, TOWER.lz, TOWER.LY, Math.PI / 2); setPocket('lounge'); pocketCam(5, 2.4); screenFx('#ffcf7a', '스카이 라운지 470m'); toast('스카이 라운지 · 창가로 가서 내려다보세요 · 가운데 유리 바닥도 있어요'); }
+    else { pocketPlace(TOWER.lx - 4, TOWER.lz, 0, -Math.PI / 2); setPocket(null); pocketCam(8, 4); } }
+  sendPresence(false);
+}
+function pocketClamp(x, z) {
+  if (pocket === 'club') return [Math.min(CLUBIN.x + 21, Math.max(CLUBIN.x - 28.6, x)), Math.min(CLUBIN.z + 18.6, Math.max(CLUBIN.z - 18.6, z))];
+  if (pocket === 'lounge') { const dx = x - TOWER.x, dz = z - TOWER.z; if (Math.hypot(dx, dz) < 15.2) return [x, z];
+    if (x > TOWER.lx + 1.6 && x < TOWER.x - 13 && Math.abs(dz) < 1.45) return [x, z]; return [myPos.x, myPos.z]; }
+  return [myPos.x, myPos.z];
+}
+// doors: walk up to them
+function updatePocketDoors(now) {
+  if (now < pocketCool || rideKind) return;
+  if (!pocket) { if (Math.hypot(myPos.x - CLUBIN.door[0], myPos.z - CLUBIN.door[1]) < 2) enterClubRoom();
+    else if (Math.hypot(myPos.x - (TOWER.lx - 2.8), myPos.z - TOWER.lz) < 2.2) startLift(true); }
+  else if (pocket === 'club') { if (myPos.x < CLUBIN.x - 27.4 && Math.abs(myPos.z - CLUBIN.z) < 2.4) exitClubRoom(); }
+  else if (pocket === 'lounge') { if (Math.hypot(myPos.x - (TOWER.lx + 2.6), myPos.z - TOWER.lz) < 1.6) startLift(false); }
+}
+// quick trips from the menu
+function goPlace(x, z, rot) {
+  if (!walking) startWalk(); if (rideKind) setRide(0); leavePocketHard();
+  pocketPlace(x, z, 0, rot); tween = null; pocketCam(9, 5); sendPresence(true);
+}
+document.getElementById('goClub').addEventListener('click', () => { goPlace(CLUBIN.door[0], CLUBIN.door[1] + 7, Math.PI); toast('실내 클럽 입구 · 앞의 문으로 걸어 들어가세요'); });
+document.getElementById('goTower').addEventListener('click', () => { goPlace(TOWER.lx - 10, TOWER.lz, Math.PI / 2); toast('스카이 타워 · 앞의 유리 엘리베이터로 걸어 들어가면 470m 스카이 라운지까지 올라가요'); });
+
+function peerZone(y) { return y > CLUBIN.y - 60 ? 2 : y > SKY.room - 60 ? 1 : 0; }
 
 // ---- ride specials: R while mounted on the dragon or a giant robot ----
 const RIDE_SP = {
@@ -4207,6 +4490,7 @@ function setRide(k) {
   k = RIDES[k] ? k : 0;
   if (k && RIDES[k].only && me.k !== RIDES[k].only) { toast(`${CHARS[RIDES[k].only - 1]}만 쓸 수 있어요`); return; }
   if (k && (!walking || tourOn)) { if (tourOn) toast('실사 사진 속에서는 탈 수 없어요'); return; }
+  if (k && pocket) { toast('실내와 엘리베이터에서는 탈 것을 탈 수 없어요'); return; }
   if (k === rideKind) return;
   if (inChamber) exitRoom(true);
   if (myAlt > 0) { camera.position.y -= myAlt; myAlt = 0; altV = 0; myAvatar.position.y = 0; spaceK = 0; applySpace(0); } // getting off in the air: the dragon sets you down first
@@ -4318,7 +4602,7 @@ renderer.setAnimationLoop((now) => {
   if (tween) { const k = Math.min(1, (now - tween.s) / tween.d), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
     camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e); if (k >= 1) tween = null; }
   if (tourOn) updateTour(now);
-  updateDomains(now); updateSky(now, dt); updateKale(now, dt); updateClub(now, dt); updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now); updateFx(now, dt);
+  updateDomains(now); updateSky(now, dt); updateKale(now, dt); updateClub(now, dt); updateTower(now); updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now); updateFx(now, dt);
   controls.update(); lookClamp();
   if (!tourOn) doPick(); updateScreen(now);
   const sh = shakeOffset(now); camera.position.add(sh);
