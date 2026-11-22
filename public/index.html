@@ -259,7 +259,8 @@ body.riding #toast{top:calc(160px + env(safe-area-inset-top,0px))}
   <div>
     <p class="group-label">가 보기</p>
     <div class="seg kale-row"><button id="goClub" type="button">실내 클럽 입구</button><button id="goTower" type="button">스카이 타워</button></div>
-    <div class="seg kale-row"><button id="goMuseum" type="button">루브르 박물관</button></div>
+    <div class="seg kale-row"><button id="goMuseum" type="button">루브르 박물관</button><button id="goPark" type="button">스릴 킹덤</button></div>
+    <div class="seg kale-row"><button id="goMountain" type="button">에베레스트 스키장</button></div>
   </div>
   <div>
     <p class="group-label">무대 꾸미기</p>
@@ -1387,7 +1388,7 @@ function faceCamera(g, dancing) {
   bill.rotation.y = dancing ? 0 : camYaw - facing - g.userData.body.rotation.y;
 }
 
-const BOUNDS = { x0: -890, x1: 890, z0: -890, z1: 890 }; // the whole Eixample grid around the basilica
+const BOUNDS = { x0: -2400, x1: 2400, z0: -2400, z1: 2400 }; // the whole Eixample grid around the basilica
 const clampX = x => Math.min(BOUNDS.x1, Math.max(BOUNDS.x0, x)), clampZ = z => Math.min(BOUNDS.z1, Math.max(BOUNDS.z0, z));
 // city blocks are solid: chamfered squares of side S every PITCH metres (the basilica block and the two parks are open)
 function blockedAt(x, z, pad = .7) {
@@ -1483,7 +1484,7 @@ function startWalk() {
   sendPresence(true);
 }
 function stopWalk() {
-  leavePocketHard(); setRide(0); setFightEnabled(false); showControls(false); setNav(true);
+  leavePocketHard(); endSki(true); setRide(0); setFightEnabled(false); showControls(false); setNav(true);
   walking = false; myAvatar.visible = false; dest = null; destMark.visible = false;
   walkBtn.setAttribute('aria-pressed', 'false'); walkBtn.textContent = '순례 시작'; bowBtn.disabled = candleBtn.disabled = danceBtn.disabled = true;
   hintEl.textContent = hint0; sendPresence(true);
@@ -1660,6 +1661,10 @@ function updateWalk(dt, now) {
   if (!walking) return;
   if (rideKind) { updateRide(dt, now); return; }
   if (pocket === 'lift') { updateLift(now); animate3D(myAvatar, false, dt, false); return; }
+  if (pocket === 'gondola') { updateGondola(now, dt); animate3D(myAvatar, false, dt, false); return; }
+  if (pocket === 'drop') { updateDrop(now, dt); animate3D(myAvatar, false, dt, false); return; }
+  if (pocket === 'coaster') { updateCoaster(now, dt); return; }
+  if (skiing) { updateSki(dt, now); return; }
   let fwd = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0), side = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0);
   if (joy.on) { fwd = joy.y; side = joy.x; }
   vMove.set(0, 0, 0);
@@ -1676,6 +1681,7 @@ function updateWalk(dt, now) {
     camera.position.add(vDelta); controls.target.add(vDelta);
     const want = Math.atan2(vMove.x, vMove.z); let dr = want - myRot; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); myRot += dr * Math.min(1, dt * 10);
   }
+  if (!pocket) { const h = mtH(myPos.x, myPos.z), d = h - myAlt; if (d) { myAlt = h; camera.position.y += d; } }
   if (!tween) controls.target.set(myPos.x, 1.5 + myAlt, myPos.z);
   myAvatar.position.copy(myPos); myAvatar.position.y = myAlt; myAvatar.rotation.y = myRot;
   myAvatar.userData.body.position.y = moving && !myAvatar.userData.model3d ? Math.abs(Math.sin(now / 140)) * .08 : 0;
@@ -1684,7 +1690,7 @@ function updateWalk(dt, now) {
   faceCamera(myAvatar, danceAnim(myAvatar.userData.body, danceStart, now));
   postPose(myAvatar, now, 0, 0);
   setInside(!pocket && insideAt(myPos.x, myPos.z));
-  updatePocketDoors(now);
+  updatePocketDoors(now); updateOutskirtDoors(now);
   sendPresence(false);
 }
 function updateCandles(now) {
@@ -2730,7 +2736,7 @@ function skySolid(x, z, alt) {
 // floor and ceiling: the tower top and the temple can be landed on, and you can't climb up through them
 function altBounds(x, z, prev, max) {
   if (inChamber) return [SKY.room, SKY.room + 120];
-  const d = Math.hypot(x - SKY.x, z - SKY.z), T = SKY.top, H = SKY.temple; let lo = 0, hi = max;
+  const d = Math.hypot(x - SKY.x, z - SKY.z), T = SKY.top, H = SKY.temple; let lo = mtH(x, z), hi = Math.max(max, lo + 200);
   if (d < SKY.rTop && prev >= T - .6) lo = T;
   if (d < SKY.rTemple + 1 && prev >= H - .6) lo = H;
   if (d < SKY.rTop && prev < T - 1) hi = Math.min(hi, T - 7);
@@ -2874,8 +2880,8 @@ function getKaleTex(kind) {
 let lookSave = null, skyLook = null;
 const _lk = new THREE.Vector3();
 function lookClamp() {
-  if (!walking || tourOn) return;
-  const groundY = (pocket || (RIDES[rideKind] && RIDES[rideKind].fly) ? myAlt : 0) + .35;
+  if (!walking || tourOn || pocket === 'coaster') return;
+  const groundY = myAlt + .35;
   _lk.subVectors(camera.position, controls.target); const len = _lk.length(); if (len < 1e-3) return;
   const below = _lk.y < 0;
   myAvatar.visible = !(_lk.y < -.25 * len); // looking up from under your own head: hide yourself so the sky is clear
@@ -3653,10 +3659,10 @@ function pocketCam(dist, h) { camera.position.set(myPos.x - Math.sin(myRot) * di
 function pocketPlace(x, z, alt, rot) { myPos.x = x; myPos.z = z; myAlt = alt; altV = 0; rideV = 0; myRot = rot; dest = null; destMark.visible = false; myAvatar.position.set(x, alt, z); myAvatar.rotation.y = rot; }
 function setPocket(p) {
   pocket = p; tween = null; pocketCool = performance.now() + 2500;
-  const lim = p === 'lift' ? [.6, 2.6] : p ? [1.5, 9] : [2.5, 70];
+  const lim = p === 'lift' || p === 'gondola' || p === 'drop' ? [.6, 2.6] : p === 'coaster' ? [.1, 60] : p ? [1.5, 9] : [2.5, 70];
   controls.minDistance = lim[0]; controls.maxDistance = lim[1];
   clubRoom.visible = p === 'club'; museumRoom.visible = p === 'museum'; if (typeof clubGrp !== 'undefined') clubGrp.visible = p !== 'club';
-  myAvatar.userData.label.visible = showLabels && p !== 'lift';
+  myAvatar.userData.label.visible = showLabels && !['lift', 'gondola', 'drop', 'coaster'].includes(p); myAvatar.visible = walking && p !== 'gondola' && p !== 'coaster';
   pocketHud.hidden = !p; if (p === 'club') pocketHud.textContent = 'NEON PULSE 실내 클럽 · 뒤쪽 초록 EXIT 문으로 나가요';
   if (p === 'museum') pocketHud.textContent = '루브르 박물관 · 나갈 땐 중앙 홀 북쪽 문';
   if (p === 'lounge') pocketHud.textContent = '스카이 라운지 470m · 엘리베이터로 돌아가면 내려가요';
@@ -3665,7 +3671,9 @@ function setPocket(p) {
 // leave whatever pocket you are in and stand on the ground outside it (stopping the walk, teleporting, ...)
 function leavePocketHard() {
   if (!pocket) return; const p = pocket; setPocket(null);
-  if (p === 'club') pocketPlace(CLUBIN.door[0], CLUBIN.door[1] + 2.5, 0, 0); else if (p === 'museum') pocketPlace(MUS.door[0] + 2.5, MUS.door[1], 0, Math.PI / 2); else pocketPlace(TOWER.lx + 4, TOWER.lz, 0, Math.PI / 2);
+  if (p === 'club') pocketPlace(CLUBIN.door[0], CLUBIN.door[1] + 2.5, 0, 0); else if (p === 'museum') pocketPlace(MUS.door[0] + 2.5, MUS.door[1], 0, Math.PI / 2);
+  else if (p === 'gondola') { gondola.cab.visible = false; pocketPlace(MTL.A[0], MTL.A[1] + 12, mtH(MTL.A[0], MTL.A[1] + 12), 0); }
+  else if (p === 'drop' || p === 'coaster') { if (p === 'coaster') { parkFx.co.riding = false; camera.up.set(0, 1, 0); controls.maxPolarAngle = WALK_POLAR; myAvatar.visible = true; } pocketPlace(PK.x - 345, PK.z, 0, Math.PI / 2); } else pocketPlace(TOWER.lx + 4, TOWER.lz, 0, Math.PI / 2);
   pocketCam(8, 4);
 }
 
@@ -3945,7 +3953,7 @@ function updatePocketDoors(now) {
 }
 // quick trips from the menu
 function goPlace(x, z, rot) {
-  if (!walking) startWalk(); if (rideKind) setRide(0); leavePocketHard();
+  if (!walking) startWalk(); if (rideKind) setRide(0); leavePocketHard(); endSki(true);
   pocketPlace(x, z, 0, rot); tween = null; pocketCam(9, 5); sendPresence(true);
 }
 document.getElementById('goClub').addEventListener('click', () => { goPlace(CLUBIN.door[0], CLUBIN.door[1] + 7, Math.PI); toast('실내 클럽 입구 · 앞의 문으로 걸어 들어가세요'); });
@@ -4129,6 +4137,275 @@ function buildMuseum() {
 }
 function enterMuseum() { if (!museumBuilt) buildMuseum(); pocketPlace(MUS.x + 4, MUS.z, MUS.y, Math.PI / 2); setPocket('museum'); pocketCam(6, 3); screenFx('#f3e2b6', '루브르 박물관'); toast('루브르 박물관 · 동쪽 그랜드 갤러리 → 남쪽 국가의 방에 모나리자, 북쪽 붉은 방에 대작들 · 서쪽은 조각 전시실 · 나갈 땐 북쪽 문'); }
 function exitMuseum() { setPocket(null); pocketPlace(MUS.door[0] + 2.5, MUS.door[1], 0, Math.PI / 2); pocketCam(8, 4); }
+
+// ================= beyond the city: a great snow mountain to the north (Everest at 1/6 scale) with gondolas, short skis and snowboards,
+// and to the east a thrill park with a 180 m drop tower, a hyper coaster with a vertical drop and a loop, a giant wheel and a pendulum =================
+const MT = { x: 0, z: -2050, peak: 1400, R: 1100 };
+function mtH(x, z) {
+  const dx = x - MT.x, dz = z - MT.z, d = Math.hypot(dx, dz); if (d > MT.R) return 0;
+  const a = Math.atan2(dz, dx), ridge = 1 + .2 * Math.cos(a * 3 + .5) + .07 * Math.cos(a * 7 + 1.3);
+  let h = MT.peak * Math.exp(-Math.pow(d / (500 * ridge), 1.35));
+  h += 240 * Math.exp(-Math.pow(Math.hypot(dx - 380, dz + 160) / 210, 1.6));            // a second summit to the south-east
+  h += 16 * Math.sin(dx * .031) * Math.cos(dz * .027) + 7 * Math.sin(dx * .083 + dz * .061) + 3 * Math.sin(dx * .21 - dz * .17);
+  const e = Math.min(1, (MT.R - d) / 260); h *= e * e * (3 - 2 * e);
+  return Math.max(0, h - 4);
+}
+const mtGrp = new THREE.Group(); scene.add(mtGrp);
+const mtFx = { cabins: [], lines: [] };
+{
+  const SZ = MT.R * 2 + 100, N = LOW ? 150 : 240, g = new THREE.PlaneGeometry(SZ, SZ, N, N).rotateX(-Math.PI / 2), pa = g.attributes.position;
+  for (let i = 0; i < pa.count; i++) { const x = pa.getX(i) + MT.x, z = pa.getZ(i) + MT.z, h = mtH(x, z); pa.setY(i, h > 0 ? h : -2); }
+  g.computeVertexNormals(); const nr = g.attributes.normal, col = new Float32Array(pa.count * 3), c = new THREE.Color();
+  for (let i = 0; i < pa.count; i++) { const h = pa.getY(i), ny = nr.getY(i), j = Math.sin(i * 12.9898) * .5 + .5;
+    if (ny < .5 && h > 40) c.set('#5d5752').lerp(new THREE.Color('#8a837c'), j * .5);
+    else if (h > 260 - j * 80) c.set('#f3f6fa').lerp(new THREE.Color('#dbe6f2'), (1 - ny) * 2);
+    else if (h > 90) c.set('#e8eef3').lerp(new THREE.Color('#9aa48f'), Math.max(0, (180 - h) / 120) * .6);
+    else c.set('#55634a').lerp(new THREE.Color('#dfe8ee'), Math.min(1, h / 90));
+    col.set([c.r, c.g, c.b], i * 3); }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, metalness: 0 })); m.position.set(MT.x, 0, MT.z); m.receiveShadow = true; mtGrp.add(m);
+  // pines on the lower slopes
+  const pines = [], rr = (() => { let s = 7; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
+  for (let k = 0; k < 6000 && pines.length < (LOW ? 300 : 900); k++) { const a = rr() * 6.283, d = 600 + rr() * 480, x = MT.x + Math.cos(a) * d, z = MT.z + Math.sin(a) * d, h = mtH(x, z);
+    if (h < 8 || h > 230) continue; const sl = Math.hypot(mtH(x + 2, z) - mtH(x - 2, z), mtH(x, z + 2) - mtH(x, z - 2)) / 4; if (sl > .55) continue;
+    if (Math.abs(x - MT.x) < 70 && z > MT.z) continue; // keep the ski run under the gondolas clear
+    pines.push([x, h, z, 6 + rr() * 8]); }
+  const pg = new THREE.ConeGeometry(1, 1, 7).translate(0, .5, 0), pm2 = new THREE.MeshStandardMaterial({ color: '#2c4a36', roughness: .9 }), im = new THREE.InstancedMesh(pg, pm2, pines.length), m4 = new THREE.Matrix4();
+  pines.forEach(([x, y, z, s], i) => { m4.makeScale(s * .38, s, s * .38).setPosition(x, y - .5, z); im.setMatrixAt(i, m4); }); mtGrp.add(im);
+  const snowCap = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 7).translate(0, .5, 0), new THREE.MeshStandardMaterial({ color: '#f2f6fa', roughness: .9 }), pines.length);
+  pines.forEach(([x, y, z, s], i) => { m4.makeScale(s * .2, s * .42, s * .2).setPosition(x, y - .5 + s * .6, z); snowCap.setMatrixAt(i, m4); }); mtGrp.add(snowCap);
+}
+// gondola lines: base village → the shoulder (about 480 m) → the summit
+const MTL = (() => { const A = [MT.x + 12, MT.z + 1040], B = [MT.x + 40, MT.z + 545], C = [MT.x + 18, MT.z + 28];
+  const line = (P, Q) => { const pts = [], hP = mtH(P[0], P[1]), hQ = mtH(Q[0], Q[1]);
+    for (let i = 0; i <= 60; i++) { const t = i / 60, x = P[0] + (Q[0] - P[0]) * t, z = P[1] + (Q[1] - P[1]) * t; pts.push(new THREE.Vector3(x, Math.max(hP + 9 + (hQ - hP) * t, mtH(x, z) + 14), z)); }
+    for (let k = 0; k < 3; k++) for (let i = 1; i < 60; i++) pts[i].y = Math.max(mtH(pts[i].x, pts[i].z) + 14, (pts[i - 1].y + pts[i + 1].y) / 2);
+    const curve = new THREE.CatmullRomCurve3(pts); return { P, Q, curve, len: curve.getLength() }; };
+  return { A, B, C, l1: line(A, B), l2: line(B, C) }; })();
+{
+  const steel = pm('#9aa3ab', { metalness: .85, roughness: .3 }), red = pm('#c8302c', { metalness: .3 }), glassM = new THREE.MeshBasicMaterial({ color: '#cfeaff', transparent: true, opacity: .25, depthWrite: false, side: THREE.DoubleSide });
+  for (const L of [MTL.l1, MTL.l2]) {
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(L.curve, 200, .12, 5), new THREE.MeshBasicMaterial({ color: '#2a2a2a' })); mtGrp.add(tube);
+    for (let i = 1; i < 10; i++) { const p = L.curve.getPointAt(i / 10), h = mtH(p.x, p.z), t = new THREE.Mesh(new THREE.CylinderGeometry(.5, .8, p.y - h + 1, 8), steel); t.position.set(p.x, (p.y + h) / 2, p.z); mtGrp.add(t);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(5, .5, .6), steel); arm.position.set(p.x, p.y + .3, p.z); mtGrp.add(arm); }
+    // cabins circulating on the line (the one you ride is placed separately)
+    for (let i = 0; i < 6; i++) { const cab = new THREE.Group(); const body = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.4, 2.6), red); body.position.y = -2.6; cab.add(body);
+      const win = new THREE.Mesh(new THREE.BoxGeometry(2.66, 1.1, 2.66), glassM); win.position.y = -2.2; cab.add(win); const hang = new THREE.Mesh(new THREE.BoxGeometry(.12, 1.4, .12), steel); hang.position.y = -.7; cab.add(hang);
+      mtGrp.add(cab); mtFx.cabins.push({ cab, L, u: i / 6 }); }
+  }
+  const station = (P, label) => { const h = mtH(P[0], P[1]); const b = new THREE.Mesh(new THREE.BoxGeometry(14, 7, 10), pm('#7a5236', { metalness: 0, roughness: .8 })); b.position.set(P[0], h + 3.5, P[1]); mtGrp.add(b);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(10.5, 4.5, 4).rotateY(Math.PI / 4), pm('#3a3f4a', { metalness: .2 })); roof.scale.set(1, 1, .75); roof.position.set(P[0], h + 9.2, P[1]); mtGrp.add(roof);
+    const s = skySign(label); s.position.set(P[0], h + 8.2, P[1] + 5.1); s.scale.setScalar(.9); mtGrp.add(s); };
+  station(MTL.A, '에베레스트 곤돌라 · 1구간'); station(MTL.B, '중턱 480m · 2구간 → 정상'); station(MTL.C, '정상역 · 1400m');
+  // the summit: prayer-flag lines and a sign
+  const top = [MT.x, MT.z]; let hb = 0, best = top; for (let k = 0; k < 400; k++) { const x = MT.x + (Math.random() - .5) * 80, z = MT.z + (Math.random() - .5) * 80, h = mtH(x, z); if (h > hb) { hb = h; best = [x, z]; } }
+  MT.top = [best[0], hb, best[1]];
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.12, .12, 6, 8), steel); pole.position.set(best[0], hb + 3, best[1]); mtGrp.add(pole);
+  const sum = skySign('정상 1400m · 에베레스트 1/6 축척'); sum.position.set(best[0], hb + 6.6, best[1]); mtGrp.add(sum); mtFx.summitSign = sum;
+  const fc = ['#2d5fd0', '#f4f4f4', '#d0302d', '#2a9d4a', '#f2c318'];
+  for (let i = 0; i < 14; i++) { const a = i / 14 * 6.283, f = new THREE.Mesh(new THREE.PlaneGeometry(.8, .6), new THREE.MeshBasicMaterial({ color: fc[i % 5], side: THREE.DoubleSide })); f.position.set(best[0] + Math.cos(a) * 3, hb + 4 - (i % 7) * .3, best[1] + Math.sin(a) * 3); f.rotation.y = -a; mtGrp.add(f); }
+  // rental hut at the base village
+  const hut = new THREE.Mesh(new THREE.BoxGeometry(8, 4, 6), pm('#9b6a43', { metalness: 0 })); const hA = mtH(MTL.A[0] - 22, MTL.A[1]); hut.position.set(MTL.A[0] - 22, hA + 2, MTL.A[1]); mtGrp.add(hut);
+  const hs = skySign('숏스키 · 스노보드 대여'); hs.position.set(MTL.A[0] - 22, hA + 5.2, MTL.A[1] + 3.1); hs.scale.setScalar(.7); mtGrp.add(hs);
+}
+const _gq = new THREE.Vector3();
+function updateMountain(now, dt) {
+  for (const c of mtFx.cabins) { c.u = (c.u + dt * 22 / c.L.len) % 1; const p = c.L.curve.getPointAt(c.u); c.cab.position.copy(p); c.L.curve.getTangentAt(c.u, _gq); c.cab.rotation.y = Math.atan2(_gq.x, _gq.z); }
+}
+// riding the gondola: you stand in a glass cabin that follows the cable
+const gondola = { L: null, u: 0, cab: null, next: null };
+{ const cab = gondola.cab = new THREE.Group(); const body = new THREE.Mesh(new THREE.BoxGeometry(2.6, .2, 2.6), pm('#9aa3ab', { metalness: .8 })); body.position.y = .05; cab.add(body);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(2.6, .2, 2.6), pm('#c8302c')); roof.position.y = 2.5; cab.add(roof);
+  for (const [x, z] of [[1.25, 1.25], [1.25, -1.25], [-1.25, 1.25], [-1.25, -1.25]]) { const p = new THREE.Mesh(new THREE.BoxGeometry(.1, 2.4, .1), pm('#9aa3ab')); p.position.set(x, 1.25, z); cab.add(p); }
+  const gl = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.3, 2.6), new THREE.MeshBasicMaterial({ color: '#cfeaff', transparent: true, opacity: .1, depthWrite: false, side: THREE.DoubleSide })); gl.position.y = 1.25; cab.add(gl);
+  cab.visible = false; scene.add(cab); }
+function startGondola(L) {
+  gondola.L = L; gondola.u = 0; gondola.cab.visible = true; const p = L.curve.getPointAt(0);
+  pocketPlace(p.x, p.z, p.y - 2.6, Math.PI); setPocket('gondola'); pocketCam(2, 1.9);
+  toast(L === MTL.l1 ? '곤돌라 출발 · 중턱 480m까지 · 뒤로 바르셀로나가 내려다보여요' : '정상행 곤돌라 · 1400m 꼭대기까지');
+}
+function updateGondola(now, dt) {
+  const L = gondola.L; gondola.u = Math.min(1, gondola.u + dt * 22 / L.len); const p = L.curve.getPointAt(gondola.u), y = p.y - 2.6, d = y - myAlt;
+  L.curve.getTangentAt(gondola.u, _gq); vDelta.set(p.x - myPos.x, d, p.z - myPos.z); myPos.x = p.x; myPos.z = p.z; myAlt = y; camera.position.add(vDelta);
+  controls.target.set(myPos.x, myAlt + 1.5, myPos.z); gondola.cab.position.set(p.x, y, p.z); gondola.cab.rotation.y = Math.atan2(_gq.x, _gq.z);
+  myAvatar.position.set(myPos.x, myAlt + .15, myPos.z); myAvatar.rotation.y = myRot;
+  pocketHud.textContent = `곤돌라 · 고도 ${Math.round(myAlt)}m · ${Math.round(gondola.u * 100)}%`;
+  if (gondola.u >= 1) { gondola.cab.visible = false; const Q = L.Q;
+    setPocket(null); pocketPlace(Q[0], Q[1] + 9, mtH(Q[0], Q[1] + 9), 0); pocketCam(8, 4); camera.position.y = myAlt + 5;
+    screenFx('#e8f4ff', L === MTL.l1 ? '중턱 480m' : '정상 1400m'); toast(L === MTL.l1 ? '중턱 · 정상행 곤돌라를 타거나, 아래 스키 버튼으로 내려가 보세요' : '에베레스트(1/6) 정상! · 스키나 스노보드로 끝까지 내려가 보세요'); }
+  sendPresence(false);
+}
+// ---- skiing and snowboarding: slide on the real slope, carve with A/D, W to skate, S to brake ----
+let skiing = null;
+const skiBox = document.createElement('div');
+skiBox.style.cssText = 'position:fixed;right:max(16px, env(safe-area-inset-right,0px));bottom:calc(330px + env(safe-area-inset-bottom,0px));z-index:6;display:flex;gap:6px;flex-direction:column';
+skiBox.innerHTML = '<button type="button" data-ski="ski">숏스키 타기</button><button type="button" data-ski="board">스노보드 타기</button><button type="button" data-ski="off">스키 벗기</button>';
+for (const b of skiBox.querySelectorAll('button')) b.style.cssText = 'font:700 13px system-ui,sans-serif;padding:9px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.35);background:rgba(20,40,60,.78);color:#fff;cursor:pointer';
+skiBox.hidden = true; document.body.append(skiBox);
+skiBox.addEventListener('click', e => { const k = e.target.dataset && e.target.dataset.ski; if (!k) return; if (k === 'off') endSki(); else startSki(k); });
+function startSki(kind) {
+  if (!walking || rideKind || pocket) return; endSki(true);
+  const gear = new THREE.Group(), mat = new THREE.MeshStandardMaterial({ color: kind === 'ski' ? '#e8452c' : '#2b7de0', roughness: .4 });
+  if (kind === 'ski') for (const s of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(.1, .04, 1.25), mat); m.position.set(s * .14, .03, .1); gear.add(m); }
+  else { const m = new THREE.Mesh(new THREE.BoxGeometry(.32, .05, 1.45), mat); m.position.y = .03; gear.add(m); }
+  myAvatar.add(gear); skiing = { kind, gear, vx: 0, vz: 0, steer: 0, spray: 0 };
+  toast(kind === 'ski' ? '숏스키 착용 · W 밀기 · A/D 회전 · S 브레이크 · 경사를 따라 미끄러져요' : '스노보드 착용 · A/D 카빙 · S 브레이크 · 경사를 따라 미끄러져요');
+}
+function endSki(silent) { if (!skiing) return; myAvatar.remove(skiing.gear); myAvatar.userData.body.rotation.z = 0; myAvatar.userData.body.rotation.y = 0; skiing = null; pocketHud.hidden = true; if (!silent) toast('스키를 벗었어요'); }
+function updateSki(dt, now) {
+  const S = skiing, x = myPos.x, z = myPos.z, gx = (mtH(x + 1, z) - mtH(x - 1, z)) / 2, gz = (mtH(x, z + 1) - mtH(x, z - 1)) / 2;
+  const left = (keys.a || keys.arrowleft ? 1 : 0) - (keys.d || keys.arrowright ? 1 : 0) + (joy.on ? -joy.x : 0);
+  S.steer += (left - S.steer) * Math.min(1, dt * 5);
+  const sp = Math.hypot(S.vx, S.vz); myRot += S.steer * (1.9 - Math.min(1.1, sp / 30)) * dt;
+  const fx = Math.sin(myRot), fz = Math.cos(myRot);
+  S.vx += -gx * 9.8 * .85 * dt; S.vz += -gz * 9.8 * .85 * dt;                                // gravity along the slope
+  let vf = S.vx * fx + S.vz * fz, vl = S.vx * fz - S.vz * fx;                                // forward / sideways
+  vl *= Math.exp(-dt * (S.kind === 'board' ? 3.5 : 4.5)); vf -= Math.sign(vf) * (.25 + .0016 * vf * vf) * dt * 3;
+  if (keys.w || keys.arrowup || (joy.on && joy.y > .3)) { if (vf < 7) vf += 3 * dt; }
+  if (keys.s || keys.arrowdown || (joy.on && joy.y < -.3)) vf *= Math.exp(-dt * 1.8);
+  if (vf < -2) vf = -2; vf = Math.min(vf, 38);
+  S.vx = fx * vf + fz * vl; S.vz = fz * vf - fx * vl;
+  const nx = clampX(x + S.vx * dt), nz = clampZ(z + S.vz * dt);
+  if (blockedAt(nx, nz)) { S.vx *= -.2; S.vz *= -.2; } else { myPos.x = nx; myPos.z = nz; }
+  const h = mtH(myPos.x, myPos.z), dy = h - myAlt; myAlt = h;
+  if (h < .5 && Math.hypot(S.vx, S.vz) < .4) { /* at the bottom, standing still */ }
+  // chase camera
+  const sp2 = Math.hypot(S.vx, S.vz), dist = 7 + sp2 * .06; _cam.set(myPos.x - fx * dist, myAlt + 3 + sp2 * .02, myPos.z - fz * dist);
+  camera.position.y += dy; camera.position.lerp(_cam, 1 - Math.exp(-dt * 3)); controls.target.set(myPos.x, myAlt + 1.2, myPos.z);
+  myAvatar.position.set(myPos.x, myAlt, myPos.z); myAvatar.rotation.y = myRot;
+  const body = myAvatar.userData.body; body.rotation.z = -S.steer * .35 * Math.min(1, sp2 / 8); body.rotation.y = S.kind === 'board' ? -1.2 : 0;
+  animate3D(myAvatar, false, dt, false);
+  if (sp2 > 9 && Math.abs(S.steer) > .3 && (S.spray += dt) > .08) { S.spray = 0; sparksFx(myPos.x, myAlt + .2, myPos.z, '#ffffff', 8, 3); }
+  pocketHud.hidden = false; pocketHud.textContent = `${S.kind === 'ski' ? '숏스키' : '스노보드'} · 시속 ${Math.round(sp2 * 3.6)}km · 고도 ${Math.round(myAlt)}m`;
+  sendPresence(false);
+}
+function updateSkiBox() {
+  const on = walking && !rideKind && !pocket && (skiing || mtH(myPos.x, myPos.z) > 2 || Math.hypot(myPos.x - MTL.A[0], myPos.z - MTL.A[1]) < 60);
+  skiBox.hidden = !on; if (on) { skiBox.children[0].hidden = skiBox.children[1].hidden = !!skiing; skiBox.children[2].hidden = !skiing; }
+}
+
+// ---------------- the thrill park ----------------
+const PK = { x: 1250, z: 0 };
+const parkGrp = new THREE.Group(); parkGrp.position.set(PK.x, 0, PK.z); scene.add(parkGrp);
+const parkFx = {};
+function parkBlocked(x, z, pad) { const dx = x - PK.x, dz = z - PK.z; if (Math.abs(dx) > 400 || Math.abs(dz) > 400) return false;
+  if (Math.hypot(dx - (-120), dz - 120) < 7 + pad) return true;                            // drop tower
+  if (Math.abs(dx - 120) < 22 + pad && Math.abs(dz - 170) < 4 + pad) return true;            // wheel base
+  return Math.hypot(dx - (-150), dz + 150) < 6 + pad; }                                     // pendulum
+{
+  const steel = pm('#c9ced4', { metalness: .85, roughness: .3 }), red = pm('#d12b2b', { metalness: .4 }), yel = pm('#f2c318', { metalness: .3 }), dark = pm('#2a2d33', { metalness: .6 });
+  const grass = new THREE.Mesh(new THREE.PlaneGeometry(700, 600).rotateX(-Math.PI / 2), pm('#4d7a3e', { metalness: 0, roughness: 1 })); grass.position.y = .05; grass.receiveShadow = true; parkGrp.add(grass);
+  const path = new THREE.Mesh(new THREE.PlaneGeometry(600, 14).rotateX(-Math.PI / 2), pm('#cdbfa6', { metalness: 0, roughness: .9 })); path.position.set(0, .07, 0); parkGrp.add(path);
+  const path2 = new THREE.Mesh(new THREE.PlaneGeometry(14, 500).rotateX(-Math.PI / 2), path.material); path2.position.set(-60, .07, 0); parkGrp.add(path2);
+  // the gate
+  for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.6, 16, 12), red); p.position.set(-330, 8, s * 10); parkGrp.add(p); const c = new THREE.Mesh(new THREE.ConeGeometry(2, 4, 12), yel); c.position.set(-330, 18, s * 10); parkGrp.add(c); }
+  const gs = neonSign('스릴 킹덤 · THRILL KINGDOM', 22, 3, '#ff3b3b', 'rgba(20,10,10,.9)'); gs.position.set(-330.5, 13, 0); gs.rotation.y = -Math.PI / 2; parkGrp.add(gs);
+  // ---- drop tower: 180 m, the ring climbs slowly then falls ----
+  const DT = parkFx.dt = { x: -120, z: 120, H: 180, y: 6, phase: 'idle', t0: 0 };
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(3, 4.5, DT.H, 16), steel); col.position.set(DT.x, DT.H / 2, DT.z); parkGrp.add(col);
+  for (let y = 20; y < DT.H; y += 20) { const r = new THREE.Mesh(new THREE.TorusGeometry(3.3, .25, 6, 24).rotateX(Math.PI / 2), red); r.position.set(DT.x, y, DT.z); parkGrp.add(r); }
+  const crown = new THREE.Mesh(new THREE.CylinderGeometry(6, 3, 8, 16), red); crown.position.set(DT.x, DT.H + 4, DT.z); parkGrp.add(crown);
+  const beacon = festGlow('#ff2020', 10); beacon.position.set(DT.x, DT.H + 10, DT.z); parkGrp.add(beacon); parkFx.beacon = beacon;
+  const ring = DT.ring = new THREE.Group(); ring.position.set(DT.x, DT.y, DT.z); parkGrp.add(ring);
+  const rb = new THREE.Mesh(new THREE.TorusGeometry(5.2, .7, 8, 32).rotateX(Math.PI / 2), yel); ring.add(rb);
+  for (let i = 0; i < 16; i++) { const a = i / 16 * 6.283, s = new THREE.Mesh(new THREE.BoxGeometry(.9, 1.2, .9), dark); s.position.set(Math.cos(a) * 6, -.4, Math.sin(a) * 6); ring.add(s); }
+  const ds = neonSign('하늘 낙하 · 180m 자유낙하', 12, 1.8, '#ffcf3a'); ds.position.set(DT.x - 9, 8, DT.z); ds.rotation.y = -Math.PI / 2; parkGrp.add(ds);
+  DT.board = [PK.x + DT.x - 8.6, PK.z + DT.z];
+  // ---- hyper coaster: chain lift to 120 m, a vertical drop, a loop, a helix, airtime hills ----
+  const cp = [[0, 3, 0], [40, 3, 0], [80, 40, 0], [120, 85, 0], [148, 118, 0], [162, 121, 0], [176, 96, 0], [182, 45, 0], [192, 9, 0], [235, 6, 0], [262, 9, 1], [288, 22, 3], [296, 42, 5], [286, 58, 7], [268, 48, 9], [266, 26, 11], [282, 9, 13], [320, 7, 16],
+    [365, 12, 24], [385, 24, 52], [372, 34, 82], [340, 28, 96], [305, 16, 92], [262, 34, 84], [222, 8, 78], [182, 36, 74], [142, 7, 70], [102, 22, 66], [62, 7, 58], [30, 4, 40], [6, 3, 20], [-12, 3, 8]]
+    .map(([x, y, z]) => new THREE.Vector3(x - 160, y, z - 230));
+  const curve = new THREE.CatmullRomCurve3(cp, true, 'centripetal'), NP = 1600, pts = curve.getSpacedPoints(NP).slice(0, NP), len = curve.getLength();
+  const ups = [], tans = []; let up = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < NP; i++) { const t = pts[(i + 1) % NP].clone().sub(pts[i]).normalize(); tans.push(t); up = up.clone().sub(t.clone().multiplyScalar(t.dot(up))).normalize(); ups.push(up); }
+  let topI = 0; for (let i = 0; i < NP; i++) if (pts[i].y > pts[topI].y) topI = i;
+  const CO = parkFx.co = { pts, ups, tans, len, NP, top: pts[topI].y, topI };
+  const railM = pm('#e8452c', { metalness: .6, roughness: .35 }), side = new THREE.Vector3();
+  for (const off of [-.7, .7]) { const rp = pts.map((p, i) => { side.crossVectors(tans[i], ups[i]).normalize(); return p.clone().addScaledVector(side, off).addScaledVector(ups[i], .2); });
+    const rail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rp, true), 1600, .14, 5, true), railM); parkGrp.add(rail); }
+  const spine = new THREE.Mesh(new THREE.TubeGeometry(curve, 1200, .32, 6, true), pm('#f2c318', { metalness: .5 })); parkGrp.add(spine);
+  const supports = []; for (let i = 0; i < NP; i += 14) { const p = pts[i]; if (p.y > 4 && ups[i].y > .5) supports.push(p); }
+  const sup = new THREE.InstancedMesh(new THREE.CylinderGeometry(.35, .5, 1, 6).translate(0, .5, 0), steel, supports.length), m4 = new THREE.Matrix4();
+  supports.forEach((p, i) => { m4.makeScale(1, p.y - .3, 1).setPosition(p.x, 0, p.z); sup.setMatrixAt(i, m4); }); parkGrp.add(sup);
+  // the train
+  const train = CO.train = new THREE.Group(); parkGrp.add(train);
+  for (let k = 0; k < 4; k++) { const car = new THREE.Mesh(new THREE.BoxGeometry(1.8, .9, 2.4), pm(k ? '#1b6fe0' : '#d12b2b', { metalness: .4 })); car.position.set(0, .7, -k * 2.7); train.add(car); }
+  CO.s = 0; CO.v = 0; CO.riding = false;
+  const plat = new THREE.Mesh(new THREE.BoxGeometry(30, 1, 6), pm('#8b8f96')); plat.position.set(pts[0].x + 12, .5, pts[0].z - 4); parkGrp.add(plat);
+  const cs = neonSign('공포의 용 · 하이퍼 코스터', 14, 2, '#ff3b3b'); cs.position.set(pts[0].x + 12, 6, pts[0].z - 7); cs.rotation.y = Math.PI; parkGrp.add(cs);
+  CO.board = [PK.x + pts[0].x + 12, PK.z + pts[0].z - 7.5];
+  // ---- giant wheel (100 m) ----
+  const WH = parkFx.wh = new THREE.Group(); WH.position.set(120, 55, 170); parkGrp.add(WH);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(48, .8, 8, 96), steel); WH.add(rim); const rim2 = rim.clone(); rim2.position.z = 3; WH.add(rim2);
+  for (let i = 0; i < 24; i++) { const a = i / 24 * 6.283, sp = new THREE.Mesh(new THREE.BoxGeometry(.4, 48, .4), steel); sp.position.set(Math.cos(a) * 24, Math.sin(a) * 24, 1.5); sp.rotation.z = a - Math.PI / 2; WH.add(sp); }
+  parkFx.cars = []; for (let i = 0; i < 24; i++) { const c = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), pm(['#d12b2b', '#f2c318', '#1b6fe0', '#2a9d4a'][i % 4])); WH.add(c); parkFx.cars.push({ c, a: i / 24 * 6.283 }); }
+  for (const s of [-1, 1]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(2, 62, 2), steel); leg.position.set(120 + s * 18, 28, 170 + 1.5); leg.rotation.z = s * .3; parkGrp.add(leg); }
+  // ---- giant pendulum: swings a ring of seats 120 degrees out ----
+  const PD = parkFx.pd = new THREE.Group(); PD.position.set(-150, 42, -150); parkGrp.add(PD);
+  for (const s of [-1, 1]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(2, 46, 2), steel); leg.position.set(-150, 21, -150 + s * 8); leg.rotation.x = s * -.15; parkGrp.add(leg); }
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 34, 1.4), red); arm.position.y = -17; PD.add(arm);
+  const disc = new THREE.Group(); disc.position.y = -35; PD.add(disc); parkFx.disc = disc;
+  disc.add(new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 1.2, 24), yel)); for (let i = 0; i < 20; i++) { const a = i / 20 * 6.283, s = new THREE.Mesh(new THREE.BoxGeometry(.8, 1.4, .8), dark); s.position.set(Math.cos(a) * 6.4, .3, Math.sin(a) * 6.4); disc.add(s); }
+  const ps = neonSign('거대 진자 · 120도 스윙', 10, 1.6, '#3bd1ff'); ps.position.set(-150, 6, -140); parkGrp.add(ps);
+  // lights along the main path
+  parkFx.bulbs = []; for (let i = 0; i < 30; i++) { const b = festGlow(['#ff3b3b', '#ffd23b', '#3bd1ff'][i % 3], 2.5); b.position.set(-300 + i * 20, 5, i % 2 ? 9 : -9); parkGrp.add(b); parkFx.bulbs.push(b); }
+}
+const _co = { p: new THREE.Vector3(), q: new THREE.Vector3(), m: new THREE.Matrix4(), side: new THREE.Vector3() };
+function placeTrain(CO, s) {
+  const f = ((s % CO.NP) + CO.NP) % CO.NP, i = Math.floor(f), j = (i + 1) % CO.NP, k = f - i;
+  _co.p.copy(CO.pts[i]).lerp(CO.pts[j], k); const t = CO.tans[i], u = CO.ups[i]; _co.side.crossVectors(t, u).normalize();
+  _co.m.makeBasis(_co.side, u, t); CO.train.quaternion.setFromRotationMatrix(_co.m); CO.train.position.copy(_co.p).addScaledVector(u, .35);
+  return { p: _co.p, t, u };
+}
+function updatePark(now, dt) {
+  const t = now / 1000, P = parkFx;
+  P.wh.rotation.z = t * .05; for (const c of P.cars) { const a = c.a + t * .05; c.c.position.set(Math.cos(c.a) * 48, Math.sin(c.a) * 48, 1.5); c.c.rotation.z = -t * .05; }
+  P.pd.rotation.x = Math.sin(t * .45) * 1.05; P.disc.rotation.y = t * .8;
+  P.beacon.material.opacity = Math.floor(t * 1.5) % 2 ? .95 : .2;
+  for (let i = 0; i < P.bulbs.length; i++) P.bulbs[i].material.opacity = (Math.floor(t * 3) + i) % 3 === 0 ? 1 : .35;
+  // the coaster runs on its own when nobody rides it
+  const CO = P.co; if (!CO.riding) { CO.s = (CO.s + 30 * dt / (CO.len / CO.NP)) % CO.NP; placeTrain(CO, CO.s); }
+  // the drop tower cycles on its own too
+  const DT = P.dt; if (pocket !== 'drop') { const c = (t % 40) / 40; DT.ring.position.y = c < .6 ? 6 + (DT.H - 14) * (c / .6) : c < .66 ? DT.H - 8 : c < .75 ? Math.max(6, DT.H - 8 - .5 * 9.8 * Math.pow((c - .66) * 40, 2)) : 6; }
+}
+// ---- riding: the drop tower ----
+const drop = { t0: 0 };
+function startDrop() { const DT = parkFx.dt; drop.t0 = performance.now(); pocketPlace(PK.x + DT.x - 6, PK.z + DT.z, DT.y, -Math.PI / 2); setPocket('drop'); pocketCam(1.6, 1.8); toast('하늘 낙하 · 180m까지 천천히 올라가요 · 꼭대기에서 예고 없이 떨어져요!'); }
+function updateDrop(now, dt) {
+  const DT = parkFx.dt, a = (now - drop.t0) / 1000, up = 28, hold = 2 + (drop.t0 % 3000) / 1000; let y;
+  if (a < up) y = DT.y + (DT.H - 14) * (a / up); else if (a < up + hold) y = DT.H - 8; else { const f = a - up - hold, fall = .5 * 9.8 * f * f; y = Math.max(DT.y, DT.H - 8 - fall); if (y > DT.y + 25 && fall > 3 && Math.floor(f * 10) % 3 === 0) shake(.15); }
+  const d = y - myAlt; myAlt = y; DT.ring.position.y = y; camera.position.y += d; controls.target.set(myPos.x, myAlt + 1.4, myPos.z); myAvatar.position.set(myPos.x, myAlt - .2, myPos.z); myAvatar.rotation.y = myRot;
+  pocketHud.textContent = `하늘 낙하 · ${Math.round(y)}m${a > up + hold && y > DT.y ? ' · 으아아아!' : ''}`;
+  if (a > up + hold + 9) { setPocket(null); pocketPlace(PK.x + DT.x - 11, PK.z + DT.z, 0, -Math.PI / 2); pocketCam(8, 4); toast('살아서 내려왔어요!'); }
+  sendPresence(false);
+}
+// ---- riding: the coaster ----
+function startCoaster() { const CO = parkFx.co; CO.riding = true; CO.s = 0; CO.v = 4; controls.maxPolarAngle = Math.PI; controls.maxDistance = 60; controls.minDistance = .1; pocketPlace(PK.x + CO.pts[0].x, PK.z + CO.pts[0].z, CO.pts[0].y, Math.PI / 2); setPocket('coaster'); toast('공포의 용 출발 · 120m 체인 리프트 → 수직 낙하 → 루프'); }
+const _cpos = new THREE.Vector3(), _ctgt = new THREE.Vector3();
+function updateCoaster(now, dt) {
+  const CO = parkFx.co, seg = CO.len / CO.NP, f = CO.s / CO.NP, cur = CO.pts[Math.floor(CO.s) % CO.NP];
+  if (CO.s < CO.topI) CO.v = 5;                                                                          // station and chain lift
+  else if (f > .93) CO.v = Math.max(3, CO.v - 8 * dt);                                                   // brakes into the station
+  else CO.v = Math.sqrt(Math.max(9, 25 + 2 * 9.8 * (CO.top - cur.y))) * .96;
+  CO.s += CO.v * dt / seg;
+  const done = CO.s >= CO.NP - 1; if (done) CO.s = CO.NP - 1;
+  const fr = placeTrain(CO, CO.s); parkGrp.updateMatrixWorld();
+  _cpos.copy(fr.p).addScaledVector(fr.u, 2.1).addScaledVector(fr.t, -1.2).add(parkGrp.position); _ctgt.copy(fr.p).addScaledVector(fr.t, 12).addScaledVector(fr.u, 1.2).add(parkGrp.position);
+  camera.position.copy(_cpos); camera.up.copy(fr.u); controls.target.copy(_ctgt); camera.lookAt(_ctgt);
+  myPos.x = _cpos.x; myPos.z = _cpos.z; myAlt = Math.max(0, fr.p.y); myAvatar.position.set(fr.p.x + PK.x, fr.p.y + .9, fr.p.z + PK.z); myAvatar.visible = false;
+  pocketHud.textContent = `공포의 용 · 시속 ${Math.round(CO.v * 3.6)}km · 높이 ${Math.round(fr.p.y)}m`;
+  if (done) { CO.riding = false; camera.up.set(0, 1, 0); controls.maxPolarAngle = WALK_POLAR; myAvatar.visible = true; setPocket(null); pocketPlace(CO.board[0] - 3, CO.board[1] - 2, 0, Math.PI); pocketCam(8, 4); toast('공포의 용 완주! 다시 타려면 승강장으로'); }
+  sendPresence(false);
+}
+function updateOutskirtDoors(now) {
+  if (now < pocketCool || rideKind || pocket || skiing) return;
+  if (Math.hypot(myPos.x - MTL.A[0], myPos.z - (MTL.A[1] - 7)) < 3) startGondola(MTL.l1);
+  else if (Math.hypot(myPos.x - MTL.B[0], myPos.z - (MTL.B[1] - 7)) < 3) startGondola(MTL.l2);
+  else if (Math.hypot(myPos.x - parkFx.dt.board[0], myPos.z - parkFx.dt.board[1]) < 2.4) startDrop();
+  else if (Math.hypot(myPos.x - parkFx.co.board[0], myPos.z - parkFx.co.board[1]) < 3) startCoaster();
+}
+document.getElementById('goMountain').addEventListener('click', () => { goPlace(MTL.A[0], MTL.A[1] + 18, Math.PI); toast('에베레스트 스키 리조트 · 앞의 곤돌라역으로 걸어가면 곤돌라를 타요 · 오른쪽 아래 버튼으로 스키·스노보드'); });
+document.getElementById('goPark').addEventListener('click', () => { goPlace(PK.x - 345, PK.z, Math.PI / 2); toast('스릴 킹덤 · 하늘 낙하(180m)와 공포의 용 코스터 승강장으로 걸어가면 탈 수 있어요'); });
 
 function peerZone(y) { return y > CLUBIN.y - 60 ? 2 : y > MUS.y - 60 ? 3 : y > SKY.room - 60 ? 1 : 0; }
 
@@ -4711,7 +4988,8 @@ function setRide(k) {
   k = RIDES[k] ? k : 0;
   if (k && RIDES[k].only && me.k !== RIDES[k].only) { toast(`${CHARS[RIDES[k].only - 1]}만 쓸 수 있어요`); return; }
   if (k && (!walking || tourOn)) { if (tourOn) toast('실사 사진 속에서는 탈 수 없어요'); return; }
-  if (k && pocket) { toast('실내와 엘리베이터에서는 탈 것을 탈 수 없어요'); return; }
+  if (k && (pocket || skiing)) { toast(skiing ? '스키를 먼저 벗어 주세요' : '실내와 엘리베이터에서는 탈 것을 탈 수 없어요'); return; }
+  if (k && !RIDES[k].fly && mtH(myPos.x, myPos.z) > 1.5) { toast('산 위에서는 나는 탈 것만 탈 수 있어요'); return; }
   if (k === rideKind) return;
   if (inChamber) exitRoom(true);
   if (myAlt > 0) { camera.position.y -= myAlt; myAlt = 0; altV = 0; myAvatar.position.y = 0; spaceK = 0; applySpace(0); } // getting off in the air: the dragon sets you down first
@@ -4759,6 +5037,8 @@ function updateRide(dt, now) {
   const overChurch = (x, z) => insideAt(x, z) || insideAt(x + 3, z) || insideAt(x - 3, z) || insideAt(x, z + 3) || insideAt(x, z - 3);
   let [cx, cz, hit] = inChamber ? roomClamp(nx, nz) : R.fly && myAlt > 32 ? (myAlt > 62 || !overChurch(bx, bz) ? [bx, bz, 0] : [myPos.x, myPos.z, 2]) : moveTry(myPos.x, myPos.z, bx, bz);
   if (R.fly && !inChamber && skySolid(cx, cz, myAlt)) [cx, cz, hit] = [myPos.x, myPos.z, 2];
+  if (!R.fly && mtH(cx, cz) > 1.5) [cx, cz, hit] = [myPos.x, myPos.z, 2];
+  if (R.fly && !inChamber && myAlt < mtH(cx, cz) - 1) [cx, cz, hit] = [myPos.x, myPos.z, 2];
   if (R.fly) { // Space / C (or the pad) climb and descend; the dragon hovers wherever you let go
     const up = (keys[' '] || padUp ? 1 : 0) - (keys.c || padDown ? 1 : 0), want = up * (R.climb || 12) * (boosting ? 1.7 : 1);
     altV += (want - altV) * Math.min(1, dt * 3);
@@ -4823,7 +5103,7 @@ renderer.setAnimationLoop((now) => {
   if (tween) { const k = Math.min(1, (now - tween.s) / tween.d), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
     camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e); if (k >= 1) tween = null; }
   if (tourOn) updateTour(now);
-  updateDomains(now); updateSky(now, dt); updateKale(now, dt); updateClub(now, dt); updateTower(now); updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now); updateFx(now, dt);
+  updateDomains(now); updateSky(now, dt); updateKale(now, dt); updateClub(now, dt); updateTower(now); updateMountain(now, dt); updatePark(now, dt); updateSkiBox(); updateWalk(dt, now); updatePeers(dt, now); updateCandles(now); updateChat(now); updateFx(now, dt);
   controls.update(); lookClamp();
   if (!tourOn) doPick(); updateScreen(now);
   const sh = shakeOffset(now); camera.position.add(sh);

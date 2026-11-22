@@ -68,7 +68,8 @@ function cleanPresence(p) {
       case 'c': if (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)) out.c = v; break;
       case 'w': out.w = v === 1 ? 1 : 0; break;
       case 'k': if (Number.isInteger(v) && v >= 0 && v <= 20) out.k = v; break; // character sheet 1..7, 0 = cloak
-      case 'x': case 'z': { const n = num(v, -1000, 1000); if (n !== undefined) out[k] = Math.round(n * 100) / 100; break; }
+      case 'x': case 'z': { const n = num(v, -2500, 2500); if (n !== undefined) out[k] = Math.round(n * 100) / 100; break; }
+      case 'y': { const n = num(v, 0, 2500); if (n !== undefined) out.y = Math.round(n * 10) / 10; break; } // altitude: flying, the tower, the indoor rooms, the mountain
       case 'r': { const n = num(v, -10, 10); if (n !== undefined) out.r = Math.round(n * 100) / 100; break; }
       case 'a': if (v === 'bow' || v === 'dance' || v === 'atk' || v === 'sp' || v === 'tj') out.a = v; break; // gestures, attack, special move
       case 'v': if (Number.isInteger(v) && v >= 0 && v <= 6) out.v = v; break; // ride: 0 on foot, 1 horse, 2 Porsche, 3 AMG, 4 gull-wing, 5 cruiser
@@ -140,7 +141,7 @@ wss.on('connection', (ws) => {
     } else if (m.type === 'event' && m.topic === 'candle') {
       const now = Date.now();
       if (now - ws.lastCandle < 1500) return; // one candle per 1.5 s per person
-      const x = num(m.data?.x, -1000, 1000), z = num(m.data?.z, -1000, 1000);
+      const x = num(m.data?.x, -2500, 2500), z = num(m.data?.z, -2500, 2500);
       if (x === undefined || z === undefined) return;
       ws.lastCandle = now;
       const c = channels.get(ws.ch);
