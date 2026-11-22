@@ -257,6 +257,10 @@ body.riding #toast{top:calc(160px + env(safe-area-inset-top,0px))}
     <div class="seg kale-row"><button id="festSynth" type="button">기본 합성 EDM</button><button id="festMute" type="button">음악 끄기</button></div>
   </div>
   <div>
+    <p class="group-label">무대 꾸미기</p>
+    <div class="seg kale-row"><button id="festStatue" type="button">동상: 홀로그램 여신</button><button id="festStage" type="button">무대: 산호 성</button></div>
+  </div>
+  <div>
     <p class="group-label">대형 화면</p>
     <form id="screenForm"><input id="screenUrl" type="url" inputmode="url" placeholder="유튜브 링크 붙여넣기" aria-label="유튜브 링크"><button type="submit">틀기</button></form>
     <div class="screen-row"><button id="screenGo" type="button">보러 가기</button><button id="muteBtn" type="button">소리 켜기</button><button id="screenDefault" type="button">기본 영상</button></div>
@@ -655,7 +659,7 @@ const PITCH = 133.3, S = 113.3, CH = 15;
 const SKY = { x: -PITCH, z: 0, top: 420, temple: 650, room: 1600, rTop: 14, rTemple: 42, door: { x: -PITCH + 27, z: 0 } };
 let inChamber = false;
 // the open-air festival: stage deck on the east edge of the park, crowd field between it and the pond
-const CLUB = { z: 4, front: 180, back: 196, half: 46, deckH: 2.4, goddessH: 30, stageW: 140, stageDepth: 24, screenY: .43, screenW: .175, screenH: .22 };
+const CLUB = { z: 4, front: 180, back: 196, half: 46, deckH: 2.4, goddessH: 42, pedH: 3.4, stageW: 140, stageDepth: 24, screenY: .43, screenW: .175, screenH: .22 };
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(5000, 5000), asphaltMat);
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 function octShape(s, c) { const h = s / 2, sh = new THREE.Shape();
@@ -3029,7 +3033,7 @@ function buildClub() {
   // light truss arch over the stage with moving heads
   const trussMat = mat('#2b2a33', { metalness: .9, roughness: .3 });
   add(new THREE.BoxGeometry(1, 1, HW * 1.5), trussMat, F + 3, DH + 42, Z); for (const s of [-1, 1]) add(new THREE.BoxGeometry(1, 42, 1), trussMat, F + 3, DH + 21, Z + s * HW * .75);
-  const deco = clubGrp.children.slice(decoFrom).filter(o => o !== led); clubFx.ledMesh = led;
+  const deco = clubGrp.children.slice(decoFrom).filter(o => o !== led); clubFx.ledMesh = led; clubFx.deco = deco;
   // laser fans: along the truss and on the deck front, raking over the crowd and up into the sky
   for (let e = 0; e < 21; e++) { const g = new THREE.Group(); g.position.set(e < 9 ? F + 3 : F + .5, e < 9 ? DH + 41.4 : DH + .6, Z + (e < 9 ? (e - 4) * 9.5 : (e - 14.5) * 9)); clubGrp.add(g);
     const fan = []; for (let b = 0; b < (LOW ? 6 : 18); b++) { const m = makeBeam(NEON[e % 3], .34, 150); m.userData.b = b; g.add(m); fan.push(m); }
@@ -3104,7 +3108,7 @@ function buildClub() {
     const s = CLUB.stageW / sz.x, sd = Math.min(s, CLUB.stageDepth / sz.z), H = sz.y * s;
     o.scale.set(s, s, sd); o.rotation.y = -Math.PI / 2; // the facade's front (+z) now faces west, its width runs north-south
     o.position.set(F + 3 + bb.max.z * sd, -bb.min.y * s, Z - ctr.x * s);
-    o.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; for (const mt of [].concat(m.material)) { mt.envMapIntensity = .5; mt.metalness = Math.min(mt.metalness, .3); mt.color.multiplyScalar(.45); mt.emissive = new THREE.Color('#00e5ff'); mt.emissiveMap = mt.map; mt.emissiveIntensity = 0; mt.needsUpdate = true; washMats.push(mt); } } });
+    o.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; for (const mt of [].concat(m.material)) { mt.envMapIntensity = .5; mt.metalness = Math.min(mt.metalness, .3); mt.color.multiplyScalar(.45); if (!mt.userData.base) { mt.userData.base = mt.color.clone(); mt.userData.m0 = mt.metalness; mt.userData.r0 = mt.roughness; } mt.emissive = new THREE.Color('#00e5ff'); mt.emissiveMap = mt.map; mt.emissiveIntensity = 0; mt.needsUpdate = true; washMats.push(mt); } } });
     clubGrp.add(o); o.updateMatrixWorld(true);
     for (const d of deco) d.visible = false;
     // find the screen frame in the facade: cast a ray at the middle of where the screen sits in the design
@@ -3112,11 +3116,11 @@ function buildClub() {
     const sx = hit ? hit.point.x - .4 : F + 8, sw = CLUB.stageW * CLUB.screenW, sh = H * CLUB.screenH;
     led.geometry.dispose(); led.geometry = new THREE.PlaneGeometry(sw, sh); led.position.set(sx, sy, Z);
     // the goddess steps forward onto the temple's stage, the high lasers move to the temple roofline
-    if (clubFx.goddess) clubFx.goddess.o.position.x = Math.min(sx - 4, F + 9);
-    clubFx.goddessX = Math.min(sx - 4, F + 9);
+    if (clubFx.goddess) clubFx.goddess.o.position.x = Math.min(sx - 6.5, F + 10);
+    clubFx.goddessX = Math.min(sx - 6.5, F + 10);
     clubFx.lasers.forEach(L => { if (!L.low) { L.g.position.x = F + 6; L.g.position.y = H * .72; } });
     clubFx.skyLasers.forEach(m => { m.position.x = F + 10; m.position.y = H * .85; });
-    clubFx.stage = { o, H, washMats }; CLUB.ready = true; buildStageFx(H, sx);
+    clubFx.stage = { o, H, washMats, sx, sy, extras: {} }; CLUB.ready = true; buildStageFx(H, sx); setStageTheme(stageIdx);
   });
   // robot DJ (small, the goddess is the star) and two robots dancing on the wings
   const place = (k, height, x, y0, z, rot, dancer) => loadRide(k).then(wrap => { if (!wrap) return;
@@ -3126,18 +3130,124 @@ function buildClub() {
   const boothFace = new THREE.Mesh(new THREE.PlaneGeometry(6, 1), new THREE.MeshBasicMaterial({ color: '#00e5ff', fog: false })); boothFace.position.set(F + 2.38, DH + .6, Z); boothFace.rotation.y = -Math.PI / 2; clubGrp.add(boothFace); clubFx.boothFace = boothFace;
   place(12, 3.4, F + 4.6, DH, Z, -Math.PI / 2, false);
   for (const s of [-1, 1]) place(10, 5, F + 3, DH, Z + s * 22, -Math.PI / 2, true);
-  // the holographic goddess
+  // the statue at the centre of the stage: a three-tier plinth with glowing rims, a turning crown of light behind its head
+  const PED = CLUB.pedH, GH = CLUB.goddessH, root = new THREE.Group(); root.position.set(clubFx.goddessX || B - 6, DH, Z); clubGrp.add(root);
+  const pedMat = mat('#16141b', { metalness: .7, roughness: .35 }), pedGlow = [];
+  [[5.6, 1.3, 0], [4.7, 1.2, 1.3], [3.9, .9, 2.5]].forEach(([r, h, y]) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r + .3, h, 48), pedMat); c.position.y = y + h / 2; c.receiveShadow = true; root.add(c);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r + .05, .1, 8, 72), new THREE.MeshBasicMaterial({ color: '#1ad0ff', fog: false })); ring.rotation.x = Math.PI / 2; ring.position.y = y + h; root.add(ring); pedGlow.push(ring); });
+  const crown = new THREE.Group(); crown.position.set(2.2, PED + GH * .86, 0); crown.rotation.y = Math.PI / 2; root.add(crown);
+  const crownMat = new THREE.MeshBasicMaterial({ color: '#1ad0ff', transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+  const crownRing = new THREE.Mesh(new THREE.TorusGeometry(GH * .13, .28, 10, 96), crownMat); crown.add(crownRing);
+  const crownRays = new THREE.Group(); crown.add(crownRays);
+  for (let i = 0; i < 28; i++) { const a = i / 28 * Math.PI * 2, L = GH * (i % 2 ? .06 : .11), rr = GH * .15 + L / 2, r = new THREE.Mesh(new THREE.PlaneGeometry(i % 2 ? .25 : .45, L), crownMat); r.position.set(Math.cos(a) * rr, Math.sin(a) * rr, 0); r.rotation.z = a - Math.PI / 2; crownRays.add(r); }
+  const halo = festGlow('#1ad0ff', 1); halo.scale.set(GH * 1.1, GH * 1.2, 1); halo.position.set(1.5, PED + GH * .55, 0); halo.material.opacity = .35; root.add(halo);
+  clubFx.goddess = { o: root, root, halo, pedGlow, crown, crownRing, crownRays, mixer: null, model: null, meshes: null, ride: null, tok: 0 };
+  setStatue(statueIdx);
+}
+// ---- statue and stage themes (menu: 무대 꾸미기) ----
+const STATUES = [
+  { name: '홀로그램 여신', g: 'holo', glow: '#1ad0ff' },
+  { name: '황금 여신', g: 'gold', glow: '#ffb640' },
+  { name: '대리석 여신', g: 'marble', glow: '#fff1d6' },
+  { name: '크리스탈 여신', g: 'crystal', glow: '#b49cff' },
+  { name: '용암 여신', g: 'lava', glow: '#ff5a1a' },
+  { name: '슈퍼 로봇 가디언', ride: 10, glow: '#5cff9a' },
+  { name: '스카이 레인저', ride: 12, glow: '#8fe3ff' },
+  { name: '강철 거인 브론즈', ride: 13, glow: '#ffb347' },
+];
+const STAGES = [
+  { name: '산호 성', hue: null },
+  { name: '황금 신전', tint: '#ffcf70', k: 1.05, metal: .75, rough: .32, hue: .1, wash: 1.2, extra: 'sun' },
+  { name: '얼음 궁전', tint: '#d6f1ff', k: 1.5, rough: .2, hue: .55, extra: 'ice' },
+  { name: '네온 사이버', tint: '#ffffff', k: .12, hue: 'cyber', wash: .75, fixed: true, extra: 'rings' },
+  { name: '화산 요새', tint: '#8a4a3a', k: .55, hue: .04, wash: 1.4, fixed: true, extra: 'lava' },
+  { name: '오픈 트러스', hide: true },
+];
+let statueIdx = 0, stageIdx = 0;
+try { statueIdx = (+localStorage.getItem('festStatue') || 0) % STATUES.length; stageIdx = (+localStorage.getItem('festStage') || 0) % STAGES.length; } catch (e) {}
+function goddessMat(mode, src) {
+  const map = src.map || null;
+  if (mode === 'gold') return new THREE.MeshStandardMaterial({ color: '#ffc75a', metalness: .9, roughness: .26, emissive: '#ff9a20', emissiveIntensity: .15, fog: false });
+  if (mode === 'marble') return new THREE.MeshStandardMaterial({ color: '#f2eee6', roughness: .32, metalness: 0, emissive: '#fff0cc', emissiveIntensity: .06, fog: false });
+  if (mode === 'crystal') return new THREE.MeshPhysicalMaterial({ color: '#cfe8ff', roughness: .06, metalness: .2, iridescence: 1, iridescenceIOR: 1.6, emissive: '#7a5cff', emissiveIntensity: .4, transparent: true, opacity: .72, fog: false });
+  if (mode === 'lava') return new THREE.MeshStandardMaterial({ color: '#16110f', roughness: .55, metalness: .3, emissive: '#ff4a10', emissiveMap: map, emissiveIntensity: .8, fog: false });
+  return new THREE.MeshStandardMaterial({ map, color: '#2f86b8', emissive: '#22d6ff', emissiveMap: map, emissiveIntensity: 1.1, roughness: .45, metalness: .2, transparent: true, opacity: .9, depthWrite: true, fog: false });
+}
+function setStatue(i) {
+  statueIdx = (i + STATUES.length) % STATUES.length; try { localStorage.setItem('festStatue', statueIdx); } catch (e) {}
+  const S = STATUES[statueIdx], btn = document.getElementById('festStatue'); if (btn) btn.textContent = '동상: ' + S.name;
+  const G = clubFx.goddess; if (!G) return; const tok = ++G.tok, glow = new THREE.Color(S.glow);
+  G.halo.material.color.copy(glow); G.crownRing.material.color.copy(glow); for (const r of G.pedGlow) r.material.color.copy(glow);
+  if (G.ride) { G.root.remove(G.ride); G.ride = null; }
+  if (S.ride) { if (G.model) G.model.visible = false;
+    loadRide(S.ride).then(wrap => { if (!wrap || G.tok !== tok) return; const r = THREE.SkeletonUtils.clone(wrap);
+      r.traverse(o => { if (o.userData && o.userData.flame) o.visible = false; if (o.isMesh) { o.material = [].concat(o.material).map(m => { const c = m.clone(); if (c.emissive) { c.emissive.copy(glow); c.emissiveMap = c.map || null; c.emissiveIntensity = .2; } return c; }); if (o.material.length === 1) o.material = o.material[0]; } });
+      r.scale.setScalar(CLUB.goddessH * .8 / (wrap.userData.h || 10)); r.position.y = CLUB.pedH; r.rotation.y = -Math.PI / 2; G.root.add(r); G.root.updateMatrixWorld(true); const bb = new THREE.Box3(); r.traverseVisible(o => { if (o.isMesh) { o.geometry.computeBoundingBox(); bb.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld)); } }); r.position.y += G.root.position.y + CLUB.pedH - bb.min.y; G.rideY = r.position.y; G.ride = r; });
+    return; }
+  if (G.model) { G.model.visible = true; for (const m of G.meshes) { if (m.material !== m.userData.src) m.material.dispose(); m.material = goddessMat(S.g, m.userData.src); } return; }
+  if (G.loading) return; G.loading = true;
   gltfLoader.load(`/models/goddess.glb?v=${ASSET_V}`, gl => {
-    const o = gl.scene, s = CLUB.goddessH / 1.8; // rigged at 1.8 m with the feet at y = 0
-    o.scale.setScalar(s); o.position.set(clubFx.goddessX || B - 5, DH + .1, Z); o.rotation.y = -Math.PI / 2;
-    o.traverse(m => { if (m.isMesh) { const src = [].concat(m.material)[0]; m.frustumCulled = false; m.castShadow = false;
-      m.material = new THREE.MeshStandardMaterial({ map: src.map || null, color: '#2f86b8', emissive: '#22d6ff', emissiveMap: src.map || null, emissiveIntensity: 1.1, roughness: .45, metalness: .2, transparent: true, opacity: .9, depthWrite: true, fog: false }); } });
-    clubGrp.add(o);
-    const halo = festGlow('#1ad0ff', 1); halo.scale.set(CLUB.goddessH * 1.1, CLUB.goddessH * 1.2, 1); halo.position.set(B - 6, DH + CLUB.goddessH * .55, Z); halo.material.opacity = .35; clubGrp.add(halo);
-    const mixer = new THREE.AnimationMixer(o); if (gl.animations[0]) mixer.clipAction(gl.animations[0]).play();
-    clubFx.goddess = { o, mixer, halo };
+    const o = gl.scene; o.scale.setScalar(CLUB.goddessH / 1.8); o.position.y = CLUB.pedH; o.rotation.y = -Math.PI / 2; G.meshes = []; // rigged at 1.8 m with the feet at y = 0
+    o.traverse(m => { if (m.isMesh) { m.userData.src = [].concat(m.material)[0]; m.frustumCulled = false; m.castShadow = false; G.meshes.push(m); } });
+    G.root.add(o); G.model = o; G.mixer = new THREE.AnimationMixer(o); if (gl.animations[0]) G.mixer.clipAction(gl.animations[0]).play();
+    const S2 = STATUES[statueIdx]; if (S2.ride) o.visible = false; else for (const m of G.meshes) m.material = goddessMat(S2.g, m.userData.src);
   });
 }
+function updateStatue(G, dt, t, kick, lvl, sec, night, beat) {
+  const S = STATUES[statueIdx];
+  if (G.mixer && G.model && G.model.visible) G.mixer.update(dt * (sec === 'drop' ? 1 : .72));
+  G.halo.material.opacity = .07 + .14 * kick * lvl + .08 * night;
+  G.crownRays.rotation.z += dt * (sec === 'drop' ? .5 : .12); G.crownRing.material.opacity = .55 + .45 * kick; G.crown.scale.setScalar(1 + .05 * kick * lvl);
+  if (G.ride) { const b = beat * Math.PI; G.ride.position.y = G.rideY + Math.abs(Math.sin(b)) * .6 * lvl; G.ride.rotation.set(0, -Math.PI / 2 + Math.sin(t * .35) * .3, Math.sin(b / 2) * .03 * lvl); }
+  if (G.model && G.model.visible && G.meshes) for (const m of G.meshes) { const mt = m.material;
+    if (S.g === 'holo') { mt.emissiveIntensity = 1.05 + .9 * kick * lvl + (Math.random() < .03 ? .3 : 0); mt.opacity = sec === 'break' ? .75 : .92; }
+    else if (S.g === 'gold') mt.emissiveIntensity = .12 + .35 * kick * lvl;
+    else if (S.g === 'marble') mt.emissiveIntensity = .04 + .12 * kick * lvl;
+    else if (S.g === 'crystal') { mt.emissive.setHSL((t * .08) % 1, 1, .5); mt.emissiveIntensity = .12 + .3 * kick * lvl; }
+    else if (S.g === 'lava') mt.emissiveIntensity = .7 + 1.4 * kick * lvl + .2 * Math.sin(t * 3); }
+}
+function setStageTheme(i) {
+  stageIdx = (i + STAGES.length) % STAGES.length; try { localStorage.setItem('festStage', stageIdx); } catch (e) {}
+  const T = STAGES[stageIdx], btn = document.getElementById('festStage'); if (btn) btn.textContent = '무대: ' + T.name;
+  const st = clubFx.stage; if (!st) return;
+  st.o.visible = !T.hide; for (const d of clubFx.deco || []) d.visible = !!T.hide;
+  const tint = new THREE.Color(T.tint || '#ffffff');
+  for (const mt of st.washMats) { const u = mt.userData; if (!u.base) continue; mt.color.copy(u.base).multiply(tint).multiplyScalar(T.k || 1); mt.metalness = T.metal ?? u.m0; mt.roughness = T.rough ?? u.r0; }
+  for (const k of ['sun', 'ice', 'rings', 'lava']) { if (T.extra === k && !st.extras[k]) st.extras[k] = buildStageExtra(k); if (st.extras[k]) st.extras[k].visible = T.extra === k; }
+}
+function buildStageExtra(k) {
+  const st = clubFx.stage, g = new THREE.Group(), F = CLUB.front, Z = CLUB.z, DH = CLUB.deckH, cx = st.sx - .8, cy = st.sy; clubGrp.add(g); g.userData.k = k;
+  if (k === 'sun' || k === 'rings') { g.userData.rings = [];
+    const n = k === 'sun' ? 1 : 5;
+    for (let i = 0; i < n; i++) { const R = k === 'sun' ? 16 : 13 + i * 3.5;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(R, k === 'sun' ? .8 : .3, 12, 128), k === 'sun' ? new THREE.MeshStandardMaterial({ color: '#ffcf5a', metalness: .9, roughness: .25, emissive: '#ff9a20', emissiveIntensity: .6, fog: false }) : new THREE.MeshBasicMaterial({ color: NEON[i % NEON.length], transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+      ring.position.set(cx, cy, Z); ring.rotation.y = Math.PI / 2; ring.userData.i = i; g.add(ring); g.userData.rings.push(ring); }
+    if (k === 'sun') { const rays = new THREE.Group(); rays.position.set(cx - .3, cy, Z); rays.rotation.y = Math.PI / 2; g.add(rays); g.userData.rays = rays;
+      const rm = new THREE.MeshBasicMaterial({ color: '#ffc040', transparent: true, opacity: .85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }); g.userData.rm = rm;
+      for (let i = 0; i < 32; i++) { const a = i / 32 * Math.PI * 2, L = i % 2 ? 6 : 11, r = new THREE.Mesh(new THREE.PlaneGeometry(i % 2 ? .45 : .8, L), rm); r.position.set(Math.cos(a) * (17.5 + L / 2), Math.sin(a) * (17.5 + L / 2), 0); r.rotation.z = a - Math.PI / 2; rays.add(r); } }
+  } else if (k === 'ice') {
+    const im = new THREE.MeshStandardMaterial({ color: '#bfeaff', emissive: '#4fc8ff', emissiveIntensity: .35, roughness: .08, metalness: .1, transparent: true, opacity: .8, fog: false }); g.userData.mat = im;
+    for (let i = 0; i < 40; i++) { const h = 5 + Math.random() * 15, c = new THREE.Mesh(new THREE.ConeGeometry(.6 + h * .09, h, 6), im), side = i % 2 ? 1 : -1;
+      c.position.set(F + 1 + Math.random() * 12, DH + h / 2 - .3, Z + side * (12 + Math.random() * 55)); c.rotation.set((Math.random() - .5) * .35, Math.random() * 3, (Math.random() - .5) * .35); g.add(c); }
+  } else if (k === 'lava') {
+    const lm = new THREE.MeshBasicMaterial({ color: '#ff5a14', fog: false }); g.userData.mat = lm;
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(3, CLUB.stageW * .85), lm); strip.rotation.x = -Math.PI / 2; strip.position.set(F - 2.2, .06, Z); g.add(strip);
+    const fm = new THREE.MeshBasicMaterial({ map: beamTex, color: '#ff6a1a', transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }); g.userData.fm = fm;
+    for (let i = 0; i < 8; i++) { const h = st.H * (.35 + Math.random() * .25), f = new THREE.Mesh(new THREE.PlaneGeometry(3.5, h), fm); f.position.set(F + 4.5, h / 2, Z + (i - 3.5) * 15 + (Math.abs(i - 3.5) < 1 ? 0 : 0)); f.rotation.y = Math.PI / 2; if (Math.abs(i - 3.5) < 1) f.position.z += (i < 4 ? -10 : 10); g.add(f); }
+    g.userData.glows = []; for (let i = 0; i < 14; i++) { const sp = festGlow('#ff4a10', 9); sp.position.set(F - 2.2, 1, Z + (i - 6.5) * 9); g.add(sp); g.userData.glows.push(sp); }
+  }
+  return g;
+}
+function updateStageExtras(t, kick, lvl) {
+  const st = clubFx.stage; if (!st) return; const T = STAGES[stageIdx], g = st.extras[T.extra]; if (!g || !g.visible) return;
+  if (T.extra === 'sun') { g.userData.rays.rotation.z = t * .08; g.userData.rings[0].material.emissiveIntensity = .5 + .9 * kick * lvl; g.userData.rm.opacity = .5 + .45 * kick; }
+  else if (T.extra === 'rings') for (const r of g.userData.rings) { const i = r.userData.i; r.rotation.set(Math.sin(t * .5 + i) * .35, Math.PI / 2 + Math.cos(t * .4 + i) * .35, t * (i % 2 ? .3 : -.3)); r.material.color.setHSL((t * .1 + i * .15) % 1, 1, .55); r.material.opacity = .55 + .45 * kick; }
+  else if (T.extra === 'ice') g.userData.mat.emissiveIntensity = .25 + .6 * kick * lvl;
+  else if (T.extra === 'lava') { g.userData.mat.color.setHSL(.04 + .02 * Math.sin(t), 1, .45 + .15 * kick); g.userData.fm.opacity = .55 + .35 * kick; for (const sp of g.userData.glows) sp.material.opacity = .4 + .5 * kick; }
+}
+document.getElementById('festStatue').addEventListener('click', () => { setStatue(statueIdx + 1); toast('가운데 동상: ' + STATUES[statueIdx].name); });
+document.getElementById('festStage').addEventListener('click', () => { setStageTheme(stageIdx + 1); toast('무대: ' + STAGES[stageIdx].name + (clubFx.stage ? '' : ' · 페스티벌 근처에서 보여요')); });
+setStatue(statueIdx); setStageTheme(stageIdx);
 function clubInside(x, z) { return crowdSpot(x, z) || (x > 140 && x < CLUB.front && Math.abs(z - CLUB.z) < 50); }
 function clubBlocked(x, z, pad) { return x > CLUB.front - pad && x < CLUB.front + 30 + pad && Math.abs(z - CLUB.z) < (CLUB.ready ? CLUB.stageW / 2 : CLUB.half) + pad; }
 // ---- the LED wall: deep sea (the goddess's scene), synth tunnel, spectrum, dancing robots ----
@@ -3364,7 +3474,7 @@ function updateStageFx(now, dt, t, beat, kick, sec, lvl, bar, camD) {
   fx.pU.t.value = t; fx.pU.kick.value = kick; fx.pU.hue.value = hue; fx.pU.lvl.value = lvl;
   // IMAG: re-film every other frame while you are close enough to see it
   if (fx.imag && camD < 260 && now - fx.imag.last > 50) { fx.imag.last = now; const I = fx.imag, cam = I.cam, shot = Math.floor(beat / 8) % 3, G = clubFx.goddess;
-    if (shot === 0 && G) { const gx = G.o.position.x, hy = CLUB.deckH + CLUB.goddessH * .86; cam.position.set(gx - 26, hy + Math.sin(t * .3) * 1.5, CLUB.z + Math.sin(t * .2) * 6); cam.lookAt(gx, hy, CLUB.z); cam.fov = 26; }
+    if (shot === 0 && G) { const gx = G.o.position.x, hy = CLUB.deckH + CLUB.pedH + CLUB.goddessH * .86; cam.position.set(gx - 26, hy + Math.sin(t * .3) * 1.5, CLUB.z + Math.sin(t * .2) * 6); cam.lookAt(gx, hy, CLUB.z); cam.fov = 26; }
     else if (shot === 1) { cam.position.set(CLUB.front - 6, CLUB.deckH + 3, CLUB.z + 4 + Math.sin(t * .4) * 2); cam.lookAt(CLUB.front + 4.6, CLUB.deckH + 2.2, CLUB.z); cam.fov = 34; }
     else { cam.position.set(CLUB.front + 1, CLUB.deckH + 6, CLUB.z + Math.sin(t * .25) * 20); cam.lookAt(CLUB.front - 30, 1.5, CLUB.z + Math.sin(t * .25 + 1) * 15); cam.fov = 40; }
     cam.updateProjectionMatrix();
@@ -3375,7 +3485,7 @@ function updateStageFx(now, dt, t, beat, kick, sec, lvl, bar, camD) {
   if (want && !composer && THREE.EffectComposer && THREE.UnrealBloomPass) {
     const pr = renderer.getPixelRatio(), rt = new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { samples: 4, type: THREE.HalfFloatType });
     composer = new THREE.EffectComposer(renderer, rt); composer.addPass(new THREE.RenderPass(scene, camera));
-    bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1, .6, .55); composer.addPass(bloomPass);
+    bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1, .6, .7); composer.addPass(bloomPass);
     composer.addPass(new THREE.ShaderPass(THREE.GammaCorrectionShader));
     addEventListener('resize', () => composer && composer.setSize(innerWidth, innerHeight)); }
   festBloom = want && composer ? (.55 + .75 * night) * (1 - Math.min(1, Math.max(0, camD - 380) / 140)) + kick * .25 * lvl : 0;
@@ -3475,7 +3585,7 @@ function updateClub(now, dt) {
       const pitch = L.tower ? (L.k ? -.55 - Math.abs(Math.sin(t * sp * .7 + b * .3)) * .5 : .03 + Math.sin(t * sp + b) * .06) : L.low ? .02 + Math.sin(t * sp + b) * .05 : (sec === 'drop' && bar % 4 >= 2 ? -.35 : .12) + Math.sin(t * sp * 1.3 + L.e) * .18;
       const yaw0 = L.tower ? (L.k ? Math.PI / 2 : Math.PI / 2) + (L.k ? spread * 2.2 + t * sp * .3 : spread * 1.3 + Math.sin(t * sp + L.e) * .5) : -Math.PI / 2 + spread + Math.sin(t * sp + L.e * 1.1) * .4;
       m.rotation.set(pitch, yaw0, 0);
-      m.material.color.setHSL(laserHue(L, b, n, t, bar), 1, sec === 'drop' && kick > .85 && (b + L.e) % 5 === 0 ? .8 : .55); if (b === 0) L.dot.material.color.copy(m.material.color); m.material.opacity = (.75 + .25 * nightNow) * (.7 + .3 * kick) * (sec === 'drop' && fb > .5 && Math.floor(beat) % 8 === 7 ? 0 : 1);
+      m.material.color.setHSL(laserHue(L, b, n, t, bar), 1, sec === 'drop' && kick > .85 && (b + L.e) % 5 === 0 ? .8 : .55); if (b === 0) L.dot.material.color.copy(m.material.color); m.material.opacity = (.5 + .2 * nightNow) * (.7 + .3 * kick) * (sec === 'drop' && fb > .5 && Math.floor(beat) % 8 === 7 ? 0 : 1);
       const hl = m.children[0]; if (hl) { hl.material.color.copy(m.material.color); hl.material.opacity = m.material.opacity * (.025 + .015 * nightNow); } }
     if (L.haze) for (const hs of L.haze) { hs.material.color.copy(L.fan[(hs.userData.k * 5) % L.fan.length].material.color); hs.material.opacity = (.03 + .05 * nightNow) * (.6 + .4 * kick); hs.material.rotation = t * .04 + hs.userData.k * 2 + L.e; } }
   for (const s of clubFx.strip) s.material.opacity = .45 + .55 * kick * (sec === 'break' ? .3 : 1);
@@ -3504,10 +3614,12 @@ function updateClub(now, dt) {
     if (o.dancer) { o.r.position.y = o.y0 + Math.abs(Math.sin(b)) * .35 * (.4 + lvl); o.r.rotation.set(Math.sin(b) * .06, o.rot + Math.sin(b / 2) * .6 * lvl, Math.sin(b) * .1); }
     else { o.r.position.y = o.y0 + Math.abs(Math.sin(b)) * .06; o.r.rotation.set(Math.sin(b) * .08 * (.5 + lvl), o.rot + Math.sin(b / 4) * .18, 0); } }
   updateStageFx(now, dt, t, beat, kick, sec, lvl, bar, camD);
-  if (clubFx.stage) { const w = clubFx.stage.washMats, hue = sec === 'drop' && bar % 8 >= 4 ? (t * .1) % 1 : .53 + .06 * Math.sin(t * .4);
-    for (const mt of w) { mt.emissive.setHSL(hue, 1, .5); mt.emissiveIntensity = nightNow * (.12 + .35 * kick * lvl); } }
-  const G = clubFx.goddess; if (G) { G.mixer.update(dt * (sec === 'drop' ? 1.15 : .85)); G.halo.material.opacity = .18 + .3 * kick * lvl + .15 * nightNow;
-    G.o.traverse(m => { if (m.isMesh) { m.material.emissiveIntensity = 1.05 + .9 * kick * lvl + .3 * Math.sin(t * 13) * (Math.random() < .03 ? 1 : 0); m.material.opacity = sec === 'break' ? .75 : .92; } }); }
+  if (clubFx.stage) { const T = STAGES[stageIdx], w = clubFx.stage.washMats;
+    const hue = T.hue === 'cyber' ? (Math.floor(beat / 4) % 2 ? .86 : .52) : typeof T.hue === 'number' ? T.hue + .03 * Math.sin(t * .5) : (sec === 'drop' && bar % 8 >= 4 ? (t * .1) % 1 : .53 + .06 * Math.sin(t * .4));
+    const inten = (T.fixed ? .25 + .55 * kick * lvl : nightNow * (.12 + .35 * kick * lvl)) * (T.wash || 1);
+    for (const mt of w) { mt.emissive.setHSL(hue, 1, .5); mt.emissiveIntensity = inten; }
+    updateStageExtras(t, kick, lvl); }
+  const G = clubFx.goddess; if (G) updateStatue(G, dt, t, kick, lvl, sec, nightNow, beat);
   if (clubFx.led && camD < 400 && now - clubFx.led.last > 33) { clubFx.led.last = now; renderScreen3D(now, beat, kick, sec, lvl); }
   if (pd < 120 && walking && (!actx || actx.state !== 'running') && now - clubAudio.poke > 2000) { clubAudio.poke = now; ac(); }
   const near = inClub || pd < 60, vol = !walking ? Math.max(0, 1 - camD / 200) * .5 : inClub ? 1 : Math.max(0, 1 - Math.max(0, pd - 40) / 160) * .8;
