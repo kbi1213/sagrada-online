@@ -259,6 +259,7 @@ body.riding #toast{top:calc(160px + env(safe-area-inset-top,0px))}
   <div>
     <p class="group-label">가 보기</p>
     <div class="seg kale-row"><button id="goClub" type="button">실내 클럽 입구</button><button id="goTower" type="button">스카이 타워</button></div>
+    <div class="seg kale-row"><button id="goMuseum" type="button">루브르 박물관</button></div>
   </div>
   <div>
     <p class="group-label">무대 꾸미기</p>
@@ -726,7 +727,7 @@ pond.scale.set(22, 1, 34); pond.position.set(PITCH - 6, .12, -2); scene.add(pond
   const DEP = [18, 21, 24, 27], blocks = [];
   for (let i = -6; i <= 6; i++) for (let j = -6; j <= 6; j++) {
     if (j === 0 && Math.abs(i) <= 1) continue;
-    if (i === 2 && j === 1) continue; // the sky tower's plaza
+    if ((i === -3 && j === 1) || (i === -2 && j === -1)) continue; // the sky tower's plaza, the museum
     const di = (rand() * 4) | 0;
     const mesh = new THREE.Mesh(geos[di], [roofs[0], facade]);
     mesh.position.set(i * PITCH, 0, j * PITCH); mesh.receiveShadow = true; mesh.castShadow = true; scene.add(mesh);
@@ -1391,9 +1392,9 @@ const clampX = x => Math.min(BOUNDS.x1, Math.max(BOUNDS.x0, x)), clampZ = z => M
 // city blocks are solid: chamfered squares of side S every PITCH metres (the basilica block and the two parks are open)
 function blockedAt(x, z, pad = .7) {
   if (Math.hypot(x - SKY.x, z - SKY.z) < 8.5 + pad) return true;
-  if (clubBlocked(x, z, pad) || towerBlocked(x, z, pad) || clubHouseBlocked(x, z, pad)) return true;
+  if (clubBlocked(x, z, pad) || towerBlocked(x, z, pad) || clubHouseBlocked(x, z, pad) || museumBlocked(x, z, pad)) return true;
   const i = Math.round(x / PITCH), j = Math.round(z / PITCH);
-  if (Math.abs(i) > 6 || Math.abs(j) > 6 || (j === 0 && Math.abs(i) <= 1) || (i === 2 && j === 1)) return false;
+  if (Math.abs(i) > 6 || Math.abs(j) > 6 || (j === 0 && Math.abs(i) <= 1) || (i === -3 && j === 1) || (i === -2 && j === -1)) return false;
   const dx = Math.abs(x - i * PITCH), dz = Math.abs(z - j * PITCH), h = S / 2 + pad;
   return dx < h && dz < h && dx + dz < 2 * h - CH;
 }
@@ -1566,7 +1567,7 @@ function updatePeers(dt, now) {
   const a = 1 - Math.exp(-dt * 8);
   for (const v of peerViews.values()) {
     const g = v.g, dx = v.tx - g.position.x, dz = v.tz - g.position.z, moving = Math.hypot(dx, dz) > .05;
-    g.visible = (!tourOn || (!!tourSpot && v.s === tourSpot.id)) && peerZone(v.ty || 0) === (pocket === 'club' ? 2 : inChamber ? 1 : 0); // inside a photo, show only people standing in the same photo
+    g.visible = (!tourOn || (!!tourSpot && v.s === tourSpot.id)) && peerZone(v.ty || 0) === (pocket === 'club' ? 2 : pocket === 'museum' ? 3 : inChamber ? 1 : 0); // inside a photo, show only people standing in the same photo
     g.position.x += dx * a; g.position.z += dz * a; g.position.y += ((v.ty || 0) - g.position.y) * a;
     let dr = v.tr - g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); g.rotation.y += dr * a;
     g.userData.body.position.y = moving && !g.userData.model3d ? Math.abs(Math.sin(now / 140)) * .08 : 0;
@@ -3654,22 +3655,23 @@ function setPocket(p) {
   pocket = p; tween = null; pocketCool = performance.now() + 2500;
   const lim = p === 'lift' ? [.6, 2.6] : p ? [1.5, 9] : [2.5, 70];
   controls.minDistance = lim[0]; controls.maxDistance = lim[1];
-  clubRoom.visible = p === 'club'; if (typeof clubGrp !== 'undefined') clubGrp.visible = p !== 'club';
+  clubRoom.visible = p === 'club'; museumRoom.visible = p === 'museum'; if (typeof clubGrp !== 'undefined') clubGrp.visible = p !== 'club';
   myAvatar.userData.label.visible = showLabels && p !== 'lift';
   pocketHud.hidden = !p; if (p === 'club') pocketHud.textContent = 'NEON PULSE 실내 클럽 · 뒤쪽 초록 EXIT 문으로 나가요';
+  if (p === 'museum') pocketHud.textContent = '루브르 박물관 · 나갈 땐 중앙 홀 북쪽 문';
   if (p === 'lounge') pocketHud.textContent = '스카이 라운지 470m · 엘리베이터로 돌아가면 내려가요';
   sendPresence(true);
 }
 // leave whatever pocket you are in and stand on the ground outside it (stopping the walk, teleporting, ...)
 function leavePocketHard() {
   if (!pocket) return; const p = pocket; setPocket(null);
-  if (p === 'club') pocketPlace(CLUBIN.door[0], CLUBIN.door[1] + 2.5, 0, 0); else pocketPlace(TOWER.lx - 4, TOWER.lz, 0, -Math.PI / 2);
+  if (p === 'club') pocketPlace(CLUBIN.door[0], CLUBIN.door[1] + 2.5, 0, 0); else if (p === 'museum') pocketPlace(MUS.door[0] + 2.5, MUS.door[1], 0, Math.PI / 2); else pocketPlace(TOWER.lx + 4, TOWER.lz, 0, Math.PI / 2);
   pocketCam(8, 4);
 }
 
 // ---------------- the indoor club ----------------
 // outside: a black box with a neon front just south of the festival field; inside: a pocket club room built high above the same spot
-const CLUBIN = { x: 150, z: -54, y: 2200, W: 60, D: 40, H: 14, door: [150, -48.4] };
+const CLUBIN = { x: 150, z: -54, y: 2200, W: 64, D: 44, H: 18, door: [150, -48.4] };
 function clubHouseBlocked(x, z, pad) { return Math.abs(x - CLUBIN.x) < 10 + pad && z > CLUBIN.z - 5 - pad && z < CLUBIN.z + 5 + pad; }
 { const g = new THREE.Group(); g.position.set(CLUBIN.x, 0, CLUBIN.z); scene.add(g);
   const b = new THREE.Mesh(new THREE.BoxGeometry(20, 9, 10), pm('#0c0c12', { roughness: .4, metalness: .6 })); b.position.y = 4.5; b.castShadow = b.receiveShadow = true; g.add(b);
@@ -3684,15 +3686,17 @@ function clubHouseBlocked(x, z, pad) { return Math.abs(x - CLUBIN.x) < 10 + pad 
 var clubHouseTrim;
 const clubRoom = new THREE.Group(); clubRoom.visible = false; scene.add(clubRoom);
 const crFx = { built: false };
+// the indoor room: 64 x 44 m, 18 m high. LED walls on three sides, a two-tier stage with a hologram goddess behind the DJ,
+// ~500 laser beams (stage truss, both side walls, a ceiling grid firing down), thick coloured haze, kinetic light bars, strobes, CO2 jets, a mirror ball
 function buildClubRoom() {
   crFx.built = true; const R = clubRoom, W = CLUBIN.W, D = CLUBIN.D, H = CLUBIN.H; R.position.set(CLUBIN.x, CLUBIN.y, CLUBIN.z);
-  const dark = pm('#0a0a10', { roughness: .55, metalness: .35 }), truss = pm('#2b2a33', { metalness: .9, roughness: .3 });
+  const dark = pm('#07070b', { roughness: .5, metalness: .4 }), truss = pm('#2b2a33', { metalness: .9, roughness: .3 });
   const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); R.add(o); return o; };
   box(W, .4, D, dark, 0, -.2, 0); box(W, .4, D, dark, 0, H + .2, 0);
   box(.4, H, D, dark, -W / 2, H / 2, 0); box(.4, H, D, dark, W / 2, H / 2, 0); box(W, H, .4, dark, 0, H / 2, -D / 2); box(W, H, .4, dark, 0, H / 2, D / 2);
-  // LED dance floor: 2 m tiles, three patterns that change every 4 bars
+  // LED dance floor
   const floorU = crFx.floorU = { t: { value: 0 }, kick: { value: 0 }, mode: { value: 0 } };
-  const fl = new THREE.Mesh(new THREE.PlaneGeometry(48, 36).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({ uniforms: floorU, fog: false,
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(52, 40).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({ uniforms: floorU, fog: false,
     vertexShader: 'varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform float t, kick, mode; varying vec2 vP;
       float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -3703,86 +3707,121 @@ function buildClubRoom() {
         else if (mode < 1.5) a = step(.5, fract(r * .25 - t * .5));
         else a = step(.5, fract((c.x + c.y) * .125 + t * .4));
         vec3 col = hsv(fract(h(c) * .3 + t * .05 + r * .03), .9, 1.0);
-        gl_FragColor = vec4(col * (0.06 + a * (0.45 + 0.4 * kick)) * edge + vec3(0.015), 1.0); }` }));
-  fl.position.set(-4, .02, 0); R.add(fl);
-  // LED strips on the side walls
+        gl_FragColor = vec4(col * (0.03 + a * (0.18 + 0.25 * kick)) * edge + vec3(0.008), 1.0); }` }));
+  fl.position.set(-5, .02, 0); R.add(fl);
+  // LED walls: the live visuals on the back wall and both side walls, a lit frame round each
+  const scrMat = crFx.scrMat = new THREE.MeshBasicMaterial({ map: scr.rt ? scr.rt.texture : null, color: scr.rt ? '#ffffff' : '#101018', fog: false });
+  const ledBack = new THREE.Mesh(new THREE.PlaneGeometry(D - 4, 13), scrMat); ledBack.position.set(W / 2 - .3, 9.5, 0); ledBack.rotation.y = -Math.PI / 2; R.add(ledBack);
+  for (const s of [-1, 1]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(30, 8), scrMat); m.position.set(-4, 10, s * (D / 2 - .3)); m.rotation.y = s > 0 ? Math.PI : 0; R.add(m); }
+  crFx.frames = [];
+  const frameBar = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ color: '#ff2bd6', fog: false })); m.position.set(x, y, z); R.add(m); crFx.frames.push(m); };
+  frameBar(.2, .25, D - 3.6, W / 2 - .35, 16.1, 0); frameBar(.2, .25, D - 3.6, W / 2 - .35, 2.9, 0);
+  for (const s of [-1, 1]) { frameBar(30.4, .2, .2, -4, 14.1, s * (D / 2 - .35)); frameBar(30.4, .2, .2, -4, 5.9, s * (D / 2 - .35)); }
+  // LED strips running up the walls between the screens
   crFx.strips = [];
-  for (let i = 0; i < 14; i++) for (const s of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(.25, H - 2, .1), new THREE.MeshBasicMaterial({ color: '#ff2bd6', fog: false })); m.position.set(-26 + i * 3.6, H / 2, s * (D / 2 - .25)); m.userData.i = i; R.add(m); crFx.strips.push(m); }
-  // stage, DJ booth, the LED wall showing the same live visuals as the festival screen, LED columns
-  box(8, 1.2, D - 2, pm('#15151d'), 26, .6, 0);
-  crFx.edge = new THREE.Mesh(new THREE.BoxGeometry(.15, .15, D - 2), new THREE.MeshBasicMaterial({ color: '#00e5ff', fog: false })); crFx.edge.position.set(22, 1.22, 0); R.add(crFx.edge);
-  box(1.6, 1.3, 6, pm('#0c0c12', { metalness: .7 }), 25, 1.85, 0);
-  crFx.booth = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.1), new THREE.MeshBasicMaterial({ color: '#00e5ff', fog: false })); crFx.booth.position.set(24.18, 1.85, 0); crFx.booth.rotation.y = -Math.PI / 2; R.add(crFx.booth);
-  const led = new THREE.Mesh(new THREE.PlaneGeometry(D - 8, 9.5), new THREE.MeshBasicMaterial({ map: scr.rt ? scr.rt.texture : null, color: scr.rt ? '#ffffff' : '#101018', fog: false })); led.position.set(29.7, 7.4, 0); led.rotation.y = -Math.PI / 2; R.add(led); crFx.led = led;
-  crFx.cols = [-1, 1].map(s => { const m = new THREE.Mesh(new THREE.BoxGeometry(.3, 11, 2.2), new THREE.MeshBasicMaterial({ color: '#7a5cff', fog: false })); m.position.set(29.5, 6.7, s * (D / 2 - 2)); R.add(m); return m; });
-  const title = neonSign('NEON PULSE CLUB', 16, 2.4, '#ff2bd6'); title.position.set(29.6, 13, 0); title.rotation.y = -Math.PI / 2; R.add(title);
-  // truss: lasers over the stage, moving heads over the floor
-  box(.5, .5, D - 2, truss, 27, 12.5, 0); box(W - 8, .4, .4, truss, -2, 12.9, -8); box(W - 8, .4, .4, truss, -2, 12.9, 8);
-  crFx.lasers = [];
-  for (let e = 0; e < 9; e++) { const g = new THREE.Group(); g.position.set(26.6, 12, -16 + e * 4); R.add(g); const fan = [];
-    for (let b = 0; b < (LOW ? 6 : 12); b++) { const m = makeBeam(NEON[e % 3], .1, 60); m.userData.b = b; g.add(m); fan.push(m); }
-    const dot = festGlow(NEON[e % 3], 1); g.add(dot); crFx.lasers.push({ g, fan, e, dot }); }
+  for (let i = 0; i < 18; i++) for (const s of [-1, 1]) { const x = -30 + i * 3.5; if (x > -20 && x < 12) continue; const m = new THREE.Mesh(new THREE.BoxGeometry(.25, H - 2, .1), new THREE.MeshBasicMaterial({ color: '#ff2bd6', fog: false })); m.position.set(x, H / 2, s * (D / 2 - .25)); m.userData.i = i; R.add(m); crFx.strips.push(m); }
+  // stage: two tiers with lit edges, the DJ booth, a hologram goddess behind the DJ
+  box(10, 1.2, D - 2, pm('#121219'), 27, .6, 0); box(5, 1.2, D - 10, pm('#121219'), 29.5, 1.8, 0);
+  crFx.edges = [];
+  for (const [x, y, d] of [[22, 1.22, D - 2], [27, 2.42, D - 10]]) { const m = new THREE.Mesh(new THREE.BoxGeometry(.15, .15, d), new THREE.MeshBasicMaterial({ color: '#00e5ff', fog: false })); m.position.set(x, y, 0); R.add(m); crFx.edges.push(m); }
+  box(1.6, 1.3, 7, pm('#0c0c12', { metalness: .7 }), 24.2, 1.85, 0);
+  crFx.booth = new THREE.Mesh(new THREE.PlaneGeometry(7, 1.1), new THREE.MeshBasicMaterial({ color: '#00e5ff', fog: false })); crFx.booth.position.set(23.38, 1.85, 0); crFx.booth.rotation.y = -Math.PI / 2; R.add(crFx.booth);
+  gltfLoader.load(`/models/goddess.glb?v=${ASSET_V}`, gl => { const o = gl.scene; o.scale.setScalar(12.5 / 1.8); o.position.set(29.5, 2.4, 0); o.rotation.y = -Math.PI / 2;
+    crFx.holo = []; o.traverse(m => { if (m.isMesh) { const src = [].concat(m.material)[0]; m.frustumCulled = false; m.material = goddessMat('holo', src); crFx.holo.push(m); } });
+    R.add(o); crFx.gMix = new THREE.AnimationMixer(o); if (gl.animations[0]) crFx.gMix.clipAction(gl.animations[0]).play(); });
+  const title = neonSign('NEON PULSE CLUB', 18, 2.6, '#ff2bd6'); title.position.set(W / 2 - .4, H - .9, 0); title.rotation.y = -Math.PI / 2; R.add(title);
+  // truss grid
+  box(.5, .5, D - 2, truss, 26, H - 1.5, 0);
+  for (const z of [-12, 0, 12]) box(W - 12, .4, .4, truss, -4, H - 1, z);
+  // lasers: 16 on the stage truss, 8 on each side wall firing across, 12 in the ceiling firing down
+  crFx.lasers = []; const L0 = (g, n, col, w, len, kind, e) => { const fan = []; for (let b = 0; b < n; b++) { const m = makeBeam(col, w, len); m.userData.b = b; g.add(m); fan.push(m); } const dot = festGlow(col, 1); g.add(dot); crFx.lasers.push({ g, fan, e, dot, kind }); };
+  for (let e = 0; e < 16; e++) { const g = new THREE.Group(); g.position.set(25.6, H - 2.2, -19 + e * 2.55); R.add(g); L0(g, LOW ? 6 : 16, NEON[e % 3], .1, 70, 'stage', e); }
+  for (const s of [-1, 1]) for (let e = 0; e < 8; e++) { const g = new THREE.Group(); g.position.set(-26 + e * 6.5, 7 + (e % 2) * 3, s * (D / 2 - .6)); R.add(g); L0(g, LOW ? 4 : 10, NEON[(e + 1) % 3], .08, 50, s > 0 ? 'wallN' : 'wallS', e + (s > 0 ? 20 : 30)); }
+  for (let e = 0; e < 12; e++) { const g = new THREE.Group(); g.position.set(-24 + (e % 6) * 8, H - .8, e < 6 ? -6 : 6); R.add(g); L0(g, LOW ? 4 : 8, NEON[e % 4], .08, 24, 'ceil', e + 40); }
+  // moving heads
   crFx.heads = [];
-  for (let i = 0; i < 10; i++) { const g = new THREE.Group(); g.position.set(-24 + (i % 5) * 10, 12.5, i < 5 ? -8 : 8); R.add(g);
-    const beam = makeVolBeam(15, 2.4); g.add(beam); const lens = festGlow('#ffffff', 1); g.add(lens); crFx.heads.push({ g, beam, lens, i }); }
-  // the mirror ball and the specks of light it throws over the walls, floor and ceiling
-  crFx.ball = new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 2), new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 1, roughness: .06, flatShading: true, emissive: '#555566', emissiveIntensity: .3 }));
-  crFx.ball.position.set(-4, 10.8, 0); R.add(crFx.ball); box(.05, 1.6, .05, truss, -4, 12.8, 0);
-  const sN = LOW ? 60 : 180; crFx.sDirs = []; for (let i = 0; i < sN; i++) crFx.sDirs.push(new THREE.Vector3().randomDirection());
+  for (let i = 0; i < 14; i++) { const g = new THREE.Group(); g.position.set(-26 + (i % 7) * 8, H - 1.4, i < 7 ? -12 : 12); R.add(g);
+    const beam = makeVolBeam(20, 2.6); g.add(beam); const lens = festGlow('#ffffff', 1); g.add(lens); crFx.heads.push({ g, beam, lens, i }); }
+  // kinetic light bars hanging in a 6 x 6 grid, rising and falling in waves
+  crFx.bars = [];
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) { const m = new THREE.Mesh(new THREE.BoxGeometry(4.2, .12, .12), new THREE.MeshBasicMaterial({ color: '#ffffff', fog: false })); m.position.set(-24 + i * 7.5, 13, -15 + j * 6); m.userData.ij = [i, j]; R.add(m); crFx.bars.push(m); }
+  // strobes along the stage truss
+  crFx.strobes = []; for (let i = 0; i < 10; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, .5), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })); m.position.set(25.2, H - 3, -18 + i * 4); m.rotation.y = -Math.PI / 2; R.add(m); crFx.strobes.push(m); }
+  // CO2 jets on the stage edge
+  crFx.co2 = []; for (let i = 0; i < 6; i++) { const g = new THREE.Group(); g.position.set(22.6, 1.2, -17 + i * 6.8); R.add(g); const parts = [];
+    for (let k = 0; k < 6; k++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: festSmokeTex, color: '#ffffff', transparent: true, opacity: 0, depthWrite: false, fog: false })); g.add(s); parts.push(s); } crFx.co2.push({ g, parts, t0: -1e9 }); }
+  crFx.lastCo2 = -1;
+  // mirror ball and its specks
+  crFx.ball = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5, 2), new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 1, roughness: .06, flatShading: true, emissive: '#555566', emissiveIntensity: .3 }));
+  crFx.ball.position.set(-6, H - 3.6, 0); R.add(crFx.ball); box(.05, 2.4, .05, truss, -6, H - 1.4, 0);
+  const sN = LOW ? 60 : 200; crFx.sDirs = []; for (let i = 0; i < sN; i++) crFx.sDirs.push(new THREE.Vector3().randomDirection());
   crFx.sPos = new Float32Array(sN * 3); const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(crFx.sPos, 3));
-  crFx.specks = new THREE.Points(sg, new THREE.PointsMaterial({ map: glowTex, size: .55, color: '#ffffff', transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })); crFx.specks.frustumCulled = false; R.add(crFx.specks);
-  // haze
-  crFx.haze = []; for (let i = 0; i < (LOW ? 8 : 18); i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: festSmokeTex, color: '#9fdcff', transparent: true, opacity: .07, depthWrite: false, fog: false }));
-    s.position.set(-24 + Math.random() * 46, 3 + Math.random() * 8, -16 + Math.random() * 32); s.scale.setScalar(10 + Math.random() * 8); s.userData.ph = Math.random() * 6; R.add(s); crFx.haze.push(s); }
-  // the exit on the back wall
+  crFx.specks = new THREE.Points(sg, new THREE.PointsMaterial({ map: glowTex, size: .6, color: '#ffffff', transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })); crFx.specks.frustumCulled = false; R.add(crFx.specks);
+  // thick haze in layers, lit in the lasers' colours
+  crFx.haze = []; for (let i = 0; i < (LOW ? 14 : 46); i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: festSmokeTex, color: '#9fdcff', transparent: true, opacity: .1, depthWrite: false, fog: false }));
+    s.position.set(-28 + Math.random() * 52, 2 + Math.random() * 13, -19 + Math.random() * 38); s.scale.setScalar(11 + Math.random() * 10); s.userData.ph = Math.random() * 6; s.userData.y0 = s.position.y; R.add(s); crFx.haze.push(s); }
+  // the exit
   const exitDoor = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 4.4), new THREE.MeshBasicMaterial({ color: '#02140a' })); exitDoor.position.set(-W / 2 + .25, 2.2, 0); exitDoor.rotation.y = Math.PI / 2; R.add(exitDoor);
   const ex = neonSign('EXIT · 나가는 문', 5, 1, '#2bff7a'); ex.position.set(-W / 2 + .3, 5.2, 0); ex.rotation.y = Math.PI / 2; R.add(ex);
-  // the crowd: the festival's photo cut-outs, a smaller dancing crowd
+  // the crowd as dark silhouettes with rims in the show's colours (seen from behind, facing the stage)
   const cr = clubFx.crowd; crFx.crowd = null;
-  if (cr) { const n = Math.min(cr.crowd.count, LOW ? 40 : 110), m = new THREE.InstancedMesh(cr.crowd.geometry, cr.crowd.material, n), av = cr.crowd.geometry.getAttribute('aVar'); m.frustumCulled = false; R.add(m);
-    const spots = []; for (let i = 0; i < n; i++) { let x, z, k = 0; do { x = -22 + Math.random() * 42; z = -17 + Math.random() * 34; } while ((Math.hypot(x + 25, z) < 6 || Math.hypot(x + 4, z) < 2.5) && k++ < 20); spots.push([x, z, Math.random() * 6, .92 + Math.random() * .16, Math.random(), av ? av.getX(i) : i % 4]); }
-    crFx.crowd = { m, spots, VAR_H: cr.VAR_H }; }
-  // two coloured lights so the robot DJ and the room's metal catch the show
-  crFx.lights = [new THREE.PointLight('#ff2bd6', 2, 45), new THREE.PointLight('#00e5ff', 2, 45)]; crFx.lights[0].position.set(20, 9, -8); crFx.lights[1].position.set(-6, 9, 8); crFx.lights.forEach(l => R.add(l));
+  if (cr) { const n = Math.min(cr.crowd.count, LOW ? 50 : 150), cm = cr.crowd.material.clone(), av = cr.crowd.geometry.getAttribute('aVar');
+    cm.fragmentShader = cm.fragmentShader.replace('if (vBack > 0.5) {', 'if (true) {'); cm.vertexShader = cm.vertexShader.replace('vBack = camPos.x < ip.x - 0.5 ? 1.0 : 0.0;', 'vBack = 1.0;'); cm.needsUpdate = true;
+    const m = new THREE.InstancedMesh(cr.crowd.geometry, cm, n); m.frustumCulled = false; R.add(m);
+    const spots = []; for (let i = 0; i < n; i++) { let x, z, k = 0; do { x = -24 + Math.random() * 44; z = -19 + Math.random() * 38; } while ((Math.hypot(x + 27, z) < 7 || Math.hypot(x + 6, z) < 2.5) && k++ < 20); spots.push([x, z, Math.random() * 6, .92 + Math.random() * .16, Math.random(), av ? av.getX(i) : i % 4]); }
+    crFx.crowd = { m, spots, VAR_H: cr.VAR_H, u: cm.uniforms }; }
+  crFx.lights = [new THREE.PointLight('#ff2bd6', 2, 50), new THREE.PointLight('#00e5ff', 2, 50)]; crFx.lights[0].position.set(20, 10, -8); crFx.lights[1].position.set(-8, 10, 8); crFx.lights.forEach(l => R.add(l));
   loadRide(12).then(wrap => { if (!wrap) return; const r = THREE.SkeletonUtils.clone(wrap); r.traverse(o => { if (o.userData && o.userData.flame) o.visible = false; });
-    r.scale.setScalar(3.4 / (wrap.userData.h || 3.4)); r.position.set(26, 1.2, 0); r.rotation.y = -Math.PI / 2; R.add(r); crFx.dj = r; });
+    r.scale.setScalar(3.4 / (wrap.userData.h || 3.4)); r.position.set(25, 1.2, 0); r.rotation.y = -Math.PI / 2; R.add(r); crFx.dj = r; });
 }
-const _cv3 = new THREE.Vector3(), _cq = new THREE.Quaternion(), _cs = new THREE.Vector3(), _cm4 = new THREE.Matrix4(), _cyAx = new THREE.Vector3(0, 1, 0);
+const _cv3 = new THREE.Vector3(), _cq = new THREE.Quaternion(), _cs = new THREE.Vector3(), _cm4 = new THREE.Matrix4();
 function updateClubRoom(now, dt, t, beat, kick, sec, lvl, bar) {
-  if (!crFx.built) return; const W = CLUBIN.W, D = CLUBIN.D, H = CLUBIN.H;
-  if (scr.rt && crFx.led.material.map !== scr.rt.texture) { crFx.led.material.map = scr.rt.texture; crFx.led.material.color.set('#ffffff'); crFx.led.material.needsUpdate = true; }
+  if (!crFx.built) return; const W = CLUBIN.W, D = CLUBIN.D, H = CLUBIN.H, drop = sec === 'drop', fb = beat % 1;
+  if (scr.rt && crFx.scrMat.map !== scr.rt.texture) { crFx.scrMat.map = scr.rt.texture; crFx.scrMat.color.set('#ffffff'); crFx.scrMat.needsUpdate = true; }
   crFx.floorU.t.value = t; crFx.floorU.kick.value = kick * lvl; crFx.floorU.mode.value = Math.floor(bar / 4) % 3;
   for (const m of crFx.strips) m.material.color.setHSL((t * .1 + m.userData.i * .07) % 1, 1, .25 + .35 * kick * lvl);
-  crFx.cols.forEach((m, i) => m.material.color.setHSL((t * .08 + i * .5) % 1, 1, .3 + .3 * kick));
-  crFx.edge.material.color.setHSL((t * .05) % 1, 1, .4 + .3 * kick); crFx.booth.material.color.setHSL((.52 + t * .05) % 1, 1, .4 + kick * .3);
-  for (const L of crFx.lasers) { const on = sec !== 'break' || L.e % 3 === 0, sp = sec === 'drop' ? 1.6 : .6; L.g.visible = on; if (!on) continue;
-    for (const m of L.fan) { const b = m.userData.b, n = L.fan.length, spread = (b / (n - 1) - .5) * (sec === 'drop' ? 1.4 : .9);
-      m.rotation.set((sec === 'drop' && bar % 4 >= 2 ? .25 : .08) + Math.sin(t * sp + L.e + b * .2) * .12, -Math.PI / 2 + spread + Math.sin(t * sp * .8 + L.e) * .35, 0);
-      m.material.color.setHSL(laserHue(L, b, n, t, bar), 1, .55); m.material.opacity = .55 * (.7 + .3 * kick); if (b === 0) L.dot.material.color.copy(m.material.color); } }
-  for (const h of crFx.heads) { h.g.rotation.y = Math.sin(t * (sec === 'drop' ? 1.1 : .45) + h.i * 1.3) * 1.3; h.beam.rotation.set(Math.PI / 2 - .55 - Math.sin(t * .7 + h.i) * .25, 0, 0);
-    const c = h.beam.material.uniforms.color.value; c.setHSL((t * .07 + h.i * .1) % 1, .9, .6); h.beam.material.uniforms.k.value = (.5 + .9 * kick) * (sec === 'break' ? .5 : 1); h.lens.material.color.copy(c); }
+  crFx.frames.forEach((m, i) => m.material.color.setHSL((t * .12 + i * .2) % 1, 1, .4 + .25 * kick));
+  crFx.edges.forEach((m, i) => m.material.color.setHSL((t * .05 + i * .5) % 1, 1, .4 + .3 * kick)); crFx.booth.material.color.setHSL((.52 + t * .05) % 1, 1, .4 + kick * .3);
+  // lasers
+  for (const L of crFx.lasers) { const on = L.kind === 'stage' ? (sec !== 'break' || L.e % 3 === 0) : L.kind === 'ceil' ? (drop || (sec === 'build' && L.e % 2 === 0)) : (sec !== 'intro' || L.e % 2 === 0);
+    L.g.visible = on; if (!on) continue; const sp = drop ? 1.6 : .6, n = L.fan.length;
+    for (const m of L.fan) { const b = m.userData.b, spread = (b / (n - 1) - .5);
+      if (L.kind === 'stage') m.rotation.set((drop && bar % 4 >= 2 ? .3 : .06) + Math.sin(t * sp + L.e + b * .2) * .14, -Math.PI / 2 + spread * (drop ? 1.5 : 1) + Math.sin(t * sp * .8 + L.e) * .35, 0);
+      else if (L.kind === 'ceil') m.rotation.set(Math.PI / 2 - .35 + spread * .7 * Math.sin(t * sp + L.e), t * sp * .5 + L.e + b * .8, 0);
+      else { const s = L.kind === 'wallN' ? Math.PI : 0; m.rotation.set(Math.sin(t * sp + b * .4 + L.e) * .2 + (drop ? .15 : 0), s + spread * 1.6 + Math.sin(t * sp * .7 + L.e) * .4, 0); }
+      m.material.color.setHSL(laserHue(L, b, n, t, bar), 1, drop && kick > .85 && (b + L.e) % 5 === 0 ? .8 : .55); m.material.opacity = .6 * (.7 + .3 * kick) * (drop && fb > .5 && Math.floor(beat) % 8 === 7 ? 0 : 1);
+      if (b === 0) L.dot.material.color.copy(m.material.color); } }
+  for (const h of crFx.heads) { h.g.rotation.y = Math.sin(t * (drop ? 1.1 : .45) + h.i * 1.3) * 1.3; h.beam.rotation.set(Math.PI / 2 - .5 - Math.sin(t * .7 + h.i) * .3, 0, 0);
+    const c = h.beam.material.uniforms.color.value; c.setHSL((t * .07 + h.i * .1) % 1, .9, .6); h.beam.material.uniforms.k.value = (.6 + 1.1 * kick) * (sec === 'break' ? .5 : 1); h.lens.material.color.copy(c); }
+  for (const m of crFx.bars) { const [i, j] = m.userData.ij; m.position.y = 12.5 + Math.sin(t * (drop ? 1.6 : .7) + i * .6 + j * .4) * 2.2; m.material.color.setHSL((t * .06 + (i + j) * .06) % 1, .8, .45 + .35 * kick * lvl); }
+  const strobeOn = drop && bar % 4 === 3 && Math.floor(beat * 4) % 2 === 0; for (const s of crFx.strobes) s.material.opacity = strobeOn ? .95 : kick > .9 && lvl > .5 ? .25 : 0;
+  if (drop && bar % 4 === 0 && bar !== crFx.lastCo2) { crFx.lastCo2 = bar; for (const c of crFx.co2) c.t0 = now; }
+  for (const c of crFx.co2) { const a = (now - c.t0) / 1000; c.parts.forEach((s, k) => { if (a < 0 || a > 1.6) { s.material.opacity = 0; return; }
+    s.position.set(0, a * 10 * (1 + k * .15), 0); s.scale.setScalar(1.4 + a * 3 + k * .3); s.material.opacity = Math.max(0, .8 - a * .5); }); }
   crFx.ball.rotation.y = t * .5; const bp = crFx.ball.position, a = t * .5, ca = Math.cos(a), sa = Math.sin(a);
   crFx.sDirs.forEach((d, i) => { const dx = d.x * ca - d.z * sa, dz = d.x * sa + d.z * ca, dy = d.y;
-    const tx = dx > 0 ? (W / 2 - .3 - bp.x) / dx : (-W / 2 + .3 - bp.x) / dx, ty = dy > 0 ? (H - .3 - bp.y) / dy : (.06 - bp.y) / dy, tz = dz > 0 ? (D / 2 - .3) / dz : (-D / 2 + .3) / dz, k = Math.min(tx, ty, tz);
+    const tx = dx > 0 ? (W / 2 - .4 - bp.x) / dx : (-W / 2 + .3 - bp.x) / dx, ty = dy > 0 ? (H - .3 - bp.y) / dy : (.06 - bp.y) / dy, tz = dz > 0 ? (D / 2 - .4) / dz : (-D / 2 + .4) / dz, k = Math.min(tx, ty, tz);
     crFx.sPos.set([bp.x + dx * k, bp.y + dy * k, bp.z + dz * k], i * 3); });
-  crFx.specks.geometry.attributes.position.needsUpdate = true; crFx.specks.material.opacity = sec === 'break' ? .95 : .35 + .3 * kick;
-  for (const s of crFx.haze) { s.material.rotation = t * .05 + s.userData.ph; s.material.color.setHSL((t * .06 + s.userData.ph) % 1, .6, .5 + .2 * kick); }
-  if (crFx.crowd) { const C = crFx.crowd; C.spots.forEach(([x, z, ph, sc, r, v], i) => { const hop = Math.max(0, Math.sin((beat + r * .2) * Math.PI * 2)) * (.05 + .3 * lvl) * (r < .8 ? 1 : .4);
+  crFx.specks.geometry.attributes.position.needsUpdate = true; crFx.specks.material.opacity = sec === 'break' ? .95 : .3 + .3 * kick;
+  for (const s of crFx.haze) { s.material.rotation = t * .04 + s.userData.ph; s.material.color.setHSL((t * .05 + s.userData.ph * .15) % 1, .7, .45 + .25 * kick * lvl); s.material.opacity = .09 + .05 * kick; s.position.y = s.userData.y0 + Math.sin(t * .2 + s.userData.ph) * .8; }
+  if (crFx.crowd) { const C = crFx.crowd; C.u.camPos.value.copy(camera.position); C.u.bright.value = .4; C.u.flash.value = kick * lvl; C.u.rim.value.setHSL((t * .1) % 1, 1, .55);
+    C.spots.forEach(([x, z, ph, sc, r, v], i) => { const hop = Math.max(0, Math.sin((beat + r * .2) * Math.PI * 2)) * (.05 + .35 * lvl) * (r < .8 ? 1 : .4);
       _cv3.set(x, hop, z); _cq.identity(); _cs.setScalar(sc * C.VAR_H[v]); _cm4.compose(_cv3, _cq, _cs); C.m.setMatrixAt(i, _cm4); }); C.m.instanceMatrix.needsUpdate = true; }
+  if (crFx.gMix) { crFx.gMix.update(dt * (drop ? 1.1 : .8)); for (const m of crFx.holo) { m.material.emissiveIntensity = 1 + .9 * kick * lvl; m.material.emissive.setHSL((.52 + t * .03) % 1, 1, .5); } }
   if (crFx.dj) { const b = beat * Math.PI; crFx.dj.position.y = 1.2 + Math.abs(Math.sin(b)) * .06; crFx.dj.rotation.set(Math.sin(b) * .08 * (.5 + lvl), -Math.PI / 2 + Math.sin(b / 4) * .18, 0); }
   crFx.lights[0].color.setHSL((t * .1) % 1, 1, .55); crFx.lights[1].color.setHSL((t * .1 + .5) % 1, 1, .55); crFx.lights.forEach(l => { l.intensity = 1.2 + 1.8 * kick * lvl; });
 }
 function enterClubRoom() {
   if (!crFx.built) buildClubRoom();
-  pocketPlace(CLUBIN.x - 25, CLUBIN.z, CLUBIN.y, Math.PI / 2); setPocket('club'); pocketCam(6, 3);
+  pocketPlace(CLUBIN.x - 26, CLUBIN.z, CLUBIN.y, Math.PI / 2); setPocket('club'); pocketCam(6, 3);
   screenFx('#ff2bd6', 'NEON PULSE CLUB'); toast('실내 클럽에 들어왔어요 · 무대 앞으로 가서 춤춰요 (비보잉 버튼) · 나갈 땐 뒤쪽 EXIT 문');
 }
 function exitClubRoom() { setPocket(null); pocketPlace(CLUBIN.door[0], CLUBIN.door[1] + 2.5, 0, 0); pocketCam(8, 4); screenFx('#00e5ff', 'NEON PULSE FESTIVAL'); }
 
 // ---------------- the sky tower: an original tapering supertall with a glass sky elevator and a sky lounge ----------------
 // (its own design: a rounded-square plan that slims and twists as it rises, a crown of four leaning fins)
-const TOWER = { x: 2 * PITCH, z: PITCH, H: 500, R0: 33, LY: 470 };
-TOWER.lx = TOWER.x - 40; TOWER.lz = TOWER.z;
+const TOWER = { x: -3 * PITCH, z: PITCH, H: 500, R0: 33, LY: 470 };
+TOWER.lx = TOWER.x + 40; TOWER.lz = TOWER.z;
 const towerR = y => TOWER.R0 * (1 - .55 * Math.pow(Math.min(1, Math.max(0, y) / TOWER.H), 1.6));
 const towerTw = y => y / TOWER.H * .7;
 function towerPt(y, a, k = 1) { const r = towerR(y) * k, tw = towerTw(y), c = Math.cos(a), s = Math.sin(a);
@@ -3849,8 +3888,8 @@ const towerFx = { beacons: [] };
   for (const [sx, sz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) add(new THREE.BoxGeometry(.4, top, .4), metal, lx + sx * 2.45, top / 2, lz + sz * 2.45);
   const ringG = new THREE.InstancedMesh(new THREE.BoxGeometry(5.3, .3, .3), metal, Math.ceil(top / 20) * 2), m4 = new THREE.Matrix4(); let ri = 0;
   for (let y = 20; y < top; y += 20) for (const sz of [-1, 1]) { m4.makeTranslation(lx, y, lz + sz * 2.45); ringG.setMatrixAt(ri++, m4); } ringG.count = ri; towerGrp.add(ringG);
-  towerFx.strips = [-1, 1].map(s => add(new THREE.BoxGeometry(.08, top, .08), new THREE.MeshBasicMaterial({ color: '#7fdfff' }), lx + 2.7, top / 2, lz + s * 2.45));
-  const bridgeL = (T.x - 14) - (T.lx + 2.2), bx = (T.lx + 2.2 - T.x) + bridgeL / 2;
+  towerFx.strips = [-1, 1].map(s => add(new THREE.BoxGeometry(.08, top, .08), new THREE.MeshBasicMaterial({ color: '#7fdfff' }), lx - 2.7, top / 2, lz + s * 2.45));
+  const bridgeL = (T.lx - 2.2) - (T.x + 14), bx = 14 + bridgeL / 2;
   add(new THREE.BoxGeometry(bridgeL, .3, 3.4), metal, bx, LY - .15, 0);
   for (const s of [-1, 1]) add(new THREE.PlaneGeometry(bridgeL, 2.6), glass, bx, LY + 1.3, s * 1.7);
   add(new THREE.PlaneGeometry(bridgeL, 3.4).rotateX(Math.PI / 2), glass, bx, LY + 2.6, 0);
@@ -3863,7 +3902,7 @@ const towerFx = { beacons: [] };
   const cl = new THREE.Mesh(new THREE.BoxGeometry(3.6, .05, .25), new THREE.MeshBasicMaterial({ color: '#fff3d6' })); cl.position.y = 3.18; cab.add(cl);
   // the plaza and the signs at the foot of the tower
   const plaza = new THREE.Mesh(new THREE.PlaneGeometry(S, S).rotateX(-Math.PI / 2), pm('#cfc6b8', { metalness: 0, roughness: .9 })); plaza.position.set(0, .03, 0); plaza.receiveShadow = true; towerGrp.add(plaza);
-  const ts = neonSign('SKY TOWER · 스카이 엘리베이터', 12, 1.6, '#7fdfff', 'rgba(10,20,30,.85)'); ts.position.set(lx - 2.6, 5.2, lz); ts.rotation.y = -Math.PI / 2; towerGrp.add(ts);
+  const ts = neonSign('SKY TOWER · 스카이 엘리베이터', 12, 1.6, '#7fdfff', 'rgba(10,20,30,.85)'); ts.position.set(lx + 2.6, 5.2, lz); ts.rotation.y = Math.PI / 2; towerGrp.add(ts);
 }
 function updateTower(now) {
   const t = now / 1000; towerFx.mat.emissiveIntensity = nightNow * .9; towerFx.finMat.emissiveIntensity = nightNow * (.35 + .25 * Math.sin(t * 1.5));
@@ -3875,7 +3914,7 @@ function updateTower(now) {
 const lift = { from: 0, to: 0, t0: 0, dur: 32000 };
 function startLift(up) {
   lift.from = up ? 0 : TOWER.LY; lift.to = up ? TOWER.LY : 0; lift.t0 = performance.now();
-  pocketPlace(TOWER.lx, TOWER.lz, lift.from, -Math.PI / 2); setPocket('lift'); pocketCam(2, 1.9);
+  pocketPlace(TOWER.lx, TOWER.lz, lift.from, Math.PI / 2); setPocket('lift'); pocketCam(2, 1.9);
   toast(up ? '스카이 엘리베이터 출발 · 유리 너머로 도시와 성당이 내려다보여요 · 마우스로 둘러보세요' : '지상으로 내려가요');
 }
 function updateLift(now) {
@@ -3883,23 +3922,26 @@ function updateLift(now) {
   myAlt = y; camera.position.y += d; controls.target.set(myPos.x, myAlt + 1.5, myPos.z); towerFx.cab.position.y = myAlt;
   myAvatar.position.set(myPos.x, myAlt, myPos.z); myAvatar.rotation.y = myRot;
   pocketHud.textContent = `스카이 엘리베이터 · 지상 ${Math.round(myAlt)}m · ${lift.to > lift.from ? '올라가는 중' : '내려가는 중'}`;
-  if (k >= 1) { if (lift.to > 0) { pocketPlace(TOWER.lx + 4.5, TOWER.lz, TOWER.LY, Math.PI / 2); setPocket('lounge'); pocketCam(5, 2.4); screenFx('#ffcf7a', '스카이 라운지 470m'); toast('스카이 라운지 · 창가로 가서 내려다보세요 · 가운데 유리 바닥도 있어요'); }
-    else { pocketPlace(TOWER.lx - 4, TOWER.lz, 0, -Math.PI / 2); setPocket(null); pocketCam(8, 4); } }
+  if (k >= 1) { if (lift.to > 0) { pocketPlace(TOWER.lx - 4.5, TOWER.lz, TOWER.LY, -Math.PI / 2); setPocket('lounge'); pocketCam(5, 2.4); screenFx('#ffcf7a', '스카이 라운지 470m'); toast('스카이 라운지 · 창가로 가서 내려다보세요 · 가운데 유리 바닥도 있어요'); }
+    else { pocketPlace(TOWER.lx + 4, TOWER.lz, 0, Math.PI / 2); setPocket(null); pocketCam(8, 4); } }
   sendPresence(false);
 }
 function pocketClamp(x, z) {
-  if (pocket === 'club') return [Math.min(CLUBIN.x + 21, Math.max(CLUBIN.x - 28.6, x)), Math.min(CLUBIN.z + 18.6, Math.max(CLUBIN.z - 18.6, z))];
+  if (pocket === 'club') return [Math.min(CLUBIN.x + 21.4, Math.max(CLUBIN.x - 30.6, x)), Math.min(CLUBIN.z + 20.6, Math.max(CLUBIN.z - 20.6, z))];
+  if (pocket === 'museum') return museumClamp(x, z);
   if (pocket === 'lounge') { const dx = x - TOWER.x, dz = z - TOWER.z; if (Math.hypot(dx, dz) < 15.2) return [x, z];
-    if (x > TOWER.lx + 1.6 && x < TOWER.x - 13 && Math.abs(dz) < 1.45) return [x, z]; return [myPos.x, myPos.z]; }
+    if (x < TOWER.lx - 1.6 && x > TOWER.x + 13 && Math.abs(dz) < 1.45) return [x, z]; return [myPos.x, myPos.z]; }
   return [myPos.x, myPos.z];
 }
 // doors: walk up to them
 function updatePocketDoors(now) {
   if (now < pocketCool || rideKind) return;
   if (!pocket) { if (Math.hypot(myPos.x - CLUBIN.door[0], myPos.z - CLUBIN.door[1]) < 2) enterClubRoom();
-    else if (Math.hypot(myPos.x - (TOWER.lx - 2.8), myPos.z - TOWER.lz) < 2.2) startLift(true); }
-  else if (pocket === 'club') { if (myPos.x < CLUBIN.x - 27.4 && Math.abs(myPos.z - CLUBIN.z) < 2.4) exitClubRoom(); }
-  else if (pocket === 'lounge') { if (Math.hypot(myPos.x - (TOWER.lx + 2.6), myPos.z - TOWER.lz) < 1.6) startLift(false); }
+    else if (Math.hypot(myPos.x - (TOWER.lx + 2.8), myPos.z - TOWER.lz) < 2.2) startLift(true);
+    else if (Math.hypot(myPos.x - MUS.door[0], myPos.z - MUS.door[1]) < 2) enterMuseum(); }
+  else if (pocket === 'museum') { if (myPos.z - MUS.z > 13.6 && Math.abs(myPos.x - MUS.x) < 2.2) exitMuseum(); }
+  else if (pocket === 'club') { if (myPos.x < CLUBIN.x - 29.4 && Math.abs(myPos.z - CLUBIN.z) < 2.4) exitClubRoom(); }
+  else if (pocket === 'lounge') { if (Math.hypot(myPos.x - (TOWER.lx - 2.6), myPos.z - TOWER.lz) < 1.6) startLift(false); }
 }
 // quick trips from the menu
 function goPlace(x, z, rot) {
@@ -3907,9 +3949,188 @@ function goPlace(x, z, rot) {
   pocketPlace(x, z, 0, rot); tween = null; pocketCam(9, 5); sendPresence(true);
 }
 document.getElementById('goClub').addEventListener('click', () => { goPlace(CLUBIN.door[0], CLUBIN.door[1] + 7, Math.PI); toast('실내 클럽 입구 · 앞의 문으로 걸어 들어가세요'); });
-document.getElementById('goTower').addEventListener('click', () => { goPlace(TOWER.lx - 10, TOWER.lz, Math.PI / 2); toast('스카이 타워 · 앞의 유리 엘리베이터로 걸어 들어가면 470m 스카이 라운지까지 올라가요'); });
+document.getElementById('goMuseum').addEventListener('click', () => { goPlace(MUS.door[0] + 9, MUS.door[1], -Math.PI / 2); toast('루브르 박물관 · 앞의 유리 돔 입구로 걸어 들어가세요'); });
+document.getElementById('goTower').addEventListener('click', () => { goPlace(TOWER.lx + 10, TOWER.lz, -Math.PI / 2); toast('스카이 타워 · 앞의 유리 엘리베이터로 걸어 들어가면 470m 스카이 라운지까지 올라가요'); });
 
-function peerZone(y) { return y > CLUBIN.y - 60 ? 2 : y > SKY.room - 60 ? 1 : 0; }
+// ================= the Louvre (recreated): a U-shaped palace around a court, an original glass dome as the entrance (not the real pyramid,
+// whose design is still under copyright), and inside, the galleries with the public-domain masterpieces hung where you would find them =================
+var museumFx = {};
+const MUS = { x: -2 * PITCH, z: -PITCH, y: 1900, door: [-2 * PITCH + 11.4, -PITCH] };
+function museumBlocked(x, z, pad) {
+  const dx = x - MUS.x, dz = z - MUS.z; if (Math.abs(dx) > 60 || Math.abs(dz) > 60) return false;
+  if (Math.hypot(dx, dz) < 10 + pad) return true;                                   // the glass dome
+  if (dx > -52 - pad && dx < 52 + pad && Math.abs(dz) > 32 - pad && Math.abs(dz) < 48 + pad) return true; // north and south wings
+  return dx > -52 - pad && dx < -34 + pad && Math.abs(dz) < 48 + pad;               // west wing
+}
+const museumOut = new THREE.Group(); museumOut.position.set(MUS.x, 0, MUS.z); scene.add(museumOut);
+{
+  const fac = (() => { const c = cv(512, 512), x = c.getContext('2d');
+    x.fillStyle = '#e8dcc2'; x.fillRect(0, 0, 512, 512);
+    x.fillStyle = 'rgba(120,100,70,.18)'; for (let y = 0; y < 512; y += 16) x.fillRect(0, y, 512, 1.5);
+    const win = (wx, wy, w, h, arch) => { x.fillStyle = '#3d4a58'; x.beginPath(); x.moveTo(wx, wy + h); x.lineTo(wx, wy + (arch ? w / 2 : 0)); if (arch) x.arc(wx + w / 2, wy + w / 2, w / 2, Math.PI, 0); else x.lineTo(wx + w, wy); x.lineTo(wx + w, wy + h); x.closePath(); x.fill();
+      x.strokeStyle = '#f6efe0'; x.lineWidth = 3; x.stroke(); x.fillStyle = 'rgba(255,255,255,.18)'; x.fillRect(wx + w / 2 - 1, wy + 4, 2, h - 4); };
+    for (let i = 0; i < 4; i++) { const bx = i * 128;
+      x.fillStyle = '#d9cbae'; x.fillRect(bx + 2, 0, 12, 512); x.fillRect(bx + 114, 0, 12, 512);            // pilasters
+      win(bx + 40, 300, 48, 150, true); win(bx + 44, 120, 40, 120, false); win(bx + 50, 22, 28, 50, false); }
+    x.fillStyle = '#cbbb9a'; x.fillRect(0, 270, 512, 14); x.fillRect(0, 92, 512, 12); x.fillRect(0, 500, 512, 12);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.wrapS = THREE.RepeatWrapping; t.anisotropy = maxAniso; return t; })();
+  const wingMat = len => { const t = fac.clone(); t.needsUpdate = true; t.repeat.set(len / 16, 1); return new THREE.MeshStandardMaterial({ map: t, roughness: .85 }); };
+  const slate = pm('#4a5462', { roughness: .6, metalness: .3 }), gold = pm('#d9a640', { metalness: .85, roughness: .3 });
+  const wing = (x, z, w, d) => { const len = Math.max(w, d), m = new THREE.Mesh(new THREE.BoxGeometry(w, 22, d), wingMat(len)); m.position.set(x, 11, z); m.castShadow = m.receiveShadow = true; museumOut.add(m);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w - 3, 7, d - 3), slate); roof.position.set(x, 25.5, z); museumOut.add(roof);
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(w - 6, .5, d - 6), gold); ridge.position.set(x, 29.2, z); museumOut.add(ridge); };
+  wing(0, 40, 104, 16); wing(0, -40, 104, 16); wing(-43, 0, 18, 64);
+  // corner pavilions with taller domed roofs
+  for (const [x, z] of [[-43, 40], [-43, -40], [44, 40], [44, -40]]) { const p = new THREE.Mesh(new THREE.BoxGeometry(20, 26, 20), wingMat(20)); p.position.set(x, 13, z); museumOut.add(p);
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(4, 11, 12, 4, 1).rotateY(Math.PI / 4), slate); r.position.set(x, 32, z); museumOut.add(r); const f = new THREE.Mesh(new THREE.SphereGeometry(.8, 10, 8), gold); f.position.set(x, 38.6, z); museumOut.add(f); }
+  // the court: paving, two long basins, and the original glass dome
+  const pave = new THREE.Mesh(new THREE.PlaneGeometry(100, 64).rotateX(-Math.PI / 2), pm('#d8cfbf', { metalness: 0, roughness: .9 })); pave.position.set(2, .04, 0); pave.receiveShadow = true; museumOut.add(pave);
+  for (const z of [-16, 16]) { const b = new THREE.Mesh(new THREE.BoxGeometry(26, .5, 8), pm('#b9b0a0', { metalness: 0 })); b.position.set(28, .25, z); museumOut.add(b);
+    const w = new THREE.Mesh(new THREE.PlaneGeometry(25, 7).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#203c52', metalness: .6, roughness: .05 })); w.position.set(28, .52, z); museumOut.add(w); }
+  const dg = new THREE.SphereGeometry(10, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  const dome = new THREE.Mesh(dg, new THREE.MeshPhysicalMaterial({ color: '#cfe6f2', metalness: .2, roughness: .05, transparent: true, opacity: .35, side: THREE.DoubleSide, depthWrite: false })); museumOut.add(dome);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(dg, 1), new THREE.LineBasicMaterial({ color: '#5f6b75' })); museumOut.add(edges);
+  const lit = new THREE.Mesh(new THREE.CircleGeometry(9.6, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#fff1d2' })); lit.position.y = .06; museumOut.add(lit); museumFx.domeLit = lit;
+  const door = new THREE.Mesh(new THREE.PlaneGeometry(3, 3.6), new THREE.MeshBasicMaterial({ color: '#1a1a1a' })); door.position.set(9.9, 1.8, 0); door.rotation.y = Math.PI / 2; museumOut.add(door);
+  const sign = skySign('루브르 박물관 · 입구'); sign.position.set(10.4, 4.6, 0); sign.rotation.y = Math.PI / 2; sign.scale.setScalar(.8); museumOut.add(sign);
+}
+// ---- inside: a pocket gallery high above the palace ----
+const museumRoom = new THREE.Group(); museumRoom.visible = false; scene.add(museumRoom);
+const MUS_ROOMS = [ // [x0, z0, x1, z1, height, wall colour, floor]
+  [-15, -15, 15, 15, 16, '#d9d2c4', 'stone'],   // the hall under the glass dome
+  [-55, -10, -15, 10, 12, '#efe9df', 'stone'],  // sculpture hall
+  [15, -7, 135, 7, 13, '#e9e2d6', 'wood'],      // the grand gallery
+  [55, -35, 95, -7, 12, '#2f3d4c', 'wood'],     // the state room (Mona Lisa, the Wedding at Cana)
+  [55, 7, 105, 32, 12, '#7a1f22', 'wood'],      // the red room (large French paintings)
+];
+const MUS_DOORS = [[14, -6.4, 16, 6.4], [-16, -9.4, -14, 9.4], [65.6, -7.8, 84.4, -6.2], [70.6, 6.2, 89.4, 7.8]];
+function museumClamp(x, z) {
+  const lx = x - MUS.x, lz = z - MUS.z, ok = (r, p) => lx > r[0] + p && lx < r[2] - p && lz > r[1] + p && lz < r[3] - p;
+  return MUS_ROOMS.some(r => ok(r, .6)) || MUS_DOORS.some(r => ok(r, 0)) ? [x, z] : [myPos.x, myPos.z];
+}
+// paintings: [file or original id, title, artist and year, width m, height m, x, y, z, rotY]
+const ART = [
+  ['monalisa', '모나리자', '레오나르도 다 빈치 · 1503–1519', 1.15, 1.7, 75, 2.6, -34.6, 0],
+  ['cana', '가나의 혼인잔치', '파올로 베로네세 · 1563', 9.9, 6.8, 94.6, 5.2, -21, -Math.PI / 2],
+  ['rocks', '암굴의 성모', '레오나르도 다 빈치 · 1483–1486', 1.6, 2.5, 55.4, 3.2, -21, Math.PI / 2],
+  ['napoleon', '나폴레옹 1세의 대관식', '자크루이 다비드 · 1805–1807', 9.8, 6.2, 74, 5, 31.6, Math.PI],
+  ['horatii', '호라티우스 형제의 맹세', '자크루이 다비드 · 1784', 4.25, 3.3, 96, 3.6, 31.6, Math.PI],
+  ['medusa', '메두사호의 뗏목', '테오도르 제리코 · 1818–1819', 7.2, 4.9, 104.6, 4.2, 19.5, -Math.PI / 2],
+  ['liberty', '민중을 이끄는 자유의 여신', '외젠 들라크루아 · 1830', 3.25, 2.6, 55.4, 3.2, 19.5, Math.PI / 2],
+  ['cythera', '키테라섬의 순례', '앙투안 와토 · 1717', 2.9, 1.95, 30, 3, -6.6, 0],
+  ['@sunset', '바르셀로나의 노을', '이 게임을 위해 그린 원작 · 2026', 2.6, 1.8, 46, 3, -6.6, 0],
+  ['@garden', '지중해의 정원', '이 게임을 위해 그린 원작 · 2026', 2.6, 1.8, 104, 3, -6.6, 0],
+  ['@castle', '산 위의 성', '이 게임을 위해 그린 원작 · 2026', 2.6, 1.8, 122, 3, -6.6, 0],
+  ['@neon', '네온 축제의 밤', '이 게임을 위해 그린 원작 · 2026', 2.6, 1.8, 30, 3, 6.6, Math.PI],
+  ['@flowers', '해바라기 꽃병', '이 게임을 위해 그린 원작 · 2026', 1.8, 2.3, 50, 3, 6.6, Math.PI],
+  ['@grid', '빨강·파랑·노랑의 구성', '이 게임을 위해 그린 원작 · 2026', 2, 2, 104, 3, 6.6, Math.PI],
+  ['@sea', '파도와 등대', '이 게임을 위해 그린 원작 · 2026', 2.6, 1.8, 122, 3, 6.6, Math.PI],
+];
+// the originals, painted in code with loose brush strokes
+function paintOriginal(id) {
+  const c = cv(1024, 720), x = c.getContext('2d'), W = c.width, H = c.height, R = Math.random;
+  const stroke = (px, py, col, w = 14, len = 26, ang = R() * 6.3) => { x.strokeStyle = col; x.lineWidth = w; x.lineCap = 'round'; x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(ang) * len, py + Math.sin(ang) * len); x.stroke(); };
+  const hsl = (h, s, l, a = 1) => `hsla(${h},${s}%,${l}%,${a})`;
+  if (id === 'flowers') { c.width = 720; c.height = 920; }
+  const w2 = c.width, h2 = c.height;
+  if (id === 'sunset') { const g = x.createLinearGradient(0, 0, 0, h2); g.addColorStop(0, '#2a1f5c'); g.addColorStop(.45, '#e0603a'); g.addColorStop(.7, '#f6c26b'); g.addColorStop(1, '#3a2230'); x.fillStyle = g; x.fillRect(0, 0, w2, h2);
+    for (let i = 0; i < 900; i++) { const y = R() * h2 * .7; stroke(R() * w2, y, hsl(20 + y / h2 * 40, 70, 45 + R() * 25, .35), 10, 40, (R() - .5) * .3); }
+    x.fillStyle = '#ffe9a8'; x.beginPath(); x.arc(w2 * .62, h2 * .52, 60, 0, 7); x.fill();
+    x.fillStyle = '#1d1424'; for (let i = 0; i < 8; i++) { const bx = 160 + i * 60, hh = 220 + (i % 4 === 1 ? 140 : i % 3 * 50); x.beginPath(); x.moveTo(bx, h2 * .78); x.lineTo(bx + 18, h2 * .78 - hh); x.lineTo(bx + 36, h2 * .78); x.fill(); }
+    x.fillRect(0, h2 * .78, w2, h2 * .22); for (let i = 0; i < 300; i++) stroke(R() * w2, h2 * .8 + R() * h2 * .2, hsl(30, 60, 30 + R() * 20, .4), 8, 30, (R() - .5) * .2); }
+  else if (id === 'garden') { x.fillStyle = '#6aa8c9'; x.fillRect(0, 0, w2, h2);
+    for (let i = 0; i < 2600; i++) { const y = R() * h2, sky = y < h2 * .35; stroke(R() * w2, y, sky ? hsl(195 + R() * 20, 50, 70 + R() * 15, .6) : hsl(80 + R() * 60, 45 + R() * 20, 30 + R() * 25, .65), sky ? 12 : 9, sky ? 30 : 16); }
+    for (let i = 0; i < 500; i++) { const y = h2 * .4 + R() * h2 * .6; x.fillStyle = hsl([350, 40, 280, 10, 55][i % 5], 80, 60 + R() * 15, .85); x.beginPath(); x.arc(R() * w2, y, 4 + R() * 6, 0, 7); x.fill(); } }
+  else if (id === 'castle') { const g = x.createLinearGradient(0, 0, 0, h2); g.addColorStop(0, '#9cc3e6'); g.addColorStop(1, '#e8eef2'); x.fillStyle = g; x.fillRect(0, 0, w2, h2);
+    const mtn = (y0, col, amp) => { x.fillStyle = col; x.beginPath(); x.moveTo(0, h2); for (let i = 0; i <= 40; i++) x.lineTo(i / 40 * w2, y0 - Math.abs(Math.sin(i * .7 + amp)) * amp * 60 - R() * 20); x.lineTo(w2, h2); x.fill(); };
+    mtn(h2 * .55, '#7f93a8', 3); mtn(h2 * .7, '#4f6a55', 2); mtn(h2 * .85, '#3b5240', 1.5);
+    x.fillStyle = '#d8cdb8'; x.fillRect(w2 * .55, h2 * .3, 140, 110); for (let i = 0; i < 3; i++) { x.fillRect(w2 * .55 + i * 55, h2 * .22, 30, 60); x.fillStyle = '#9b4a3a'; x.beginPath(); x.moveTo(w2 * .55 + i * 55 - 4, h2 * .22); x.lineTo(w2 * .55 + i * 55 + 15, h2 * .14); x.lineTo(w2 * .55 + i * 55 + 34, h2 * .22); x.fill(); x.fillStyle = '#d8cdb8'; }
+    for (let i = 0; i < 900; i++) stroke(R() * w2, R() * h2, 'rgba(255,255,255,.06)', 10, 30); }
+  else if (id === 'neon') { x.fillStyle = '#07060f'; x.fillRect(0, 0, w2, h2);
+    for (let i = 0; i < 70; i++) { x.strokeStyle = hsl((i * 37) % 360, 100, 60, .7); x.lineWidth = 2 + R() * 3; x.beginPath(); x.moveTo(w2 / 2 + (R() - .5) * 200, h2 * .35); x.lineTo(R() * w2, R() < .5 ? 0 : h2 * (.2 + R() * .4)); x.stroke(); }
+    x.fillStyle = '#000'; for (let i = 0; i < 60; i++) { const bx = R() * w2, by = h2 * .75 + R() * h2 * .2; x.beginPath(); x.arc(bx, by, 14, 0, 7); x.fill(); x.fillRect(bx - 12, by, 24, h2); if (R() < .4) { x.fillRect(bx - 16, by - 50, 5, 45); } } }
+  else if (id === 'flowers') { x.fillStyle = '#c9b48a'; x.fillRect(0, 0, w2, h2); for (let i = 0; i < 1200; i++) stroke(R() * w2, R() * h2, hsl(40, 30, 55 + R() * 15, .3), 14, 30);
+    x.fillStyle = '#5a7fa8'; x.beginPath(); x.moveTo(w2 * .38, h2 * .58); x.quadraticCurveTo(w2 * .2, h2 * .8, w2 * .4, h2 * .92); x.lineTo(w2 * .6, h2 * .92); x.quadraticCurveTo(w2 * .8, h2 * .8, w2 * .62, h2 * .58); x.fill();
+    for (let i = 0; i < 9; i++) { const fx = w2 * (.2 + R() * .6), fy = h2 * (.12 + R() * .4); x.strokeStyle = '#4e6b2e'; x.lineWidth = 6; x.beginPath(); x.moveTo(w2 / 2, h2 * .6); x.lineTo(fx, fy); x.stroke();
+      for (let p = 0; p < 18; p++) { const a = p / 18 * 6.3; stroke(fx + Math.cos(a) * 30, fy + Math.sin(a) * 30, hsl(45 + R() * 10, 90, 55, .95), 16, 26, a); } x.fillStyle = '#5a3a1a'; x.beginPath(); x.arc(fx, fy, 24, 0, 7); x.fill(); } }
+  else if (id === 'grid') { c.width = c.height = 900; const w3 = 900; x.fillStyle = '#f3efe4'; x.fillRect(0, 0, w3, w3);
+    x.fillStyle = '#c8202a'; x.fillRect(0, 0, 520, 520); x.fillStyle = '#1f3f9a'; x.fillRect(0, 640, 280, 260); x.fillStyle = '#f2c618'; x.fillRect(780, 760, 120, 140);
+    x.fillStyle = '#111'; for (const v of [280, 520, 780]) x.fillRect(v - 9, 0, 18, w3); for (const v of [520, 640, 760]) x.fillRect(0, v - 9, w3, 18); }
+  else { const g = x.createLinearGradient(0, 0, 0, h2); g.addColorStop(0, '#3e5f86'); g.addColorStop(.5, '#a9c2d6'); g.addColorStop(1, '#1d3d5a'); x.fillStyle = g; x.fillRect(0, 0, w2, h2);
+    for (let i = 0; i < 1800; i++) { const y = h2 * .45 + R() * h2 * .55; stroke(R() * w2, y, hsl(200 + R() * 20, 50, 25 + R() * 35, .5), 10, 34, (R() - .5) * .5); }
+    for (let i = 0; i < 200; i++) stroke(R() * w2, h2 * .5 + R() * h2 * .4, 'rgba(255,255,255,.55)', 6, 22, (R() - .5) * .4);
+    x.fillStyle = '#efe6d6'; x.fillRect(w2 * .78, h2 * .2, 36, 220); x.fillStyle = '#b43a2c'; x.fillRect(w2 * .78, h2 * .26, 36, 26); x.fillRect(w2 * .78, h2 * .36, 36, 26);
+    x.fillStyle = '#fff6c8'; x.fillRect(w2 * .78 - 6, h2 * .17, 48, 16); x.fillStyle = 'rgba(255,240,180,.25)'; x.beginPath(); x.moveTo(w2 * .79, h2 * .18); x.lineTo(0, h2 * .05); x.lineTo(0, h2 * .3); x.fill(); }
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso; return t;
+}
+function plaque(title, sub) { const c = cv(512, 128), x = c.getContext('2d'); x.fillStyle = '#f4efe4'; x.fillRect(0, 0, 512, 128); x.fillStyle = '#222'; x.font = 'bold 38px sans-serif'; x.fillText(title, 18, 52); x.font = '26px sans-serif'; x.fillStyle = '#555'; x.fillText(sub, 18, 98);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return new THREE.Mesh(new THREE.PlaneGeometry(.8, .2), new THREE.MeshBasicMaterial({ map: t })); }
+let museumBuilt = false;
+function buildMuseum() {
+  museumBuilt = true; const R = museumRoom; R.position.set(MUS.x, MUS.y, MUS.z);
+  const tex = kind => { const c = cv(256, 256), x = c.getContext('2d');
+    if (kind === 'wood') { for (let i = 0; i < 16; i++) { x.fillStyle = `hsl(28,${40 + (i % 3) * 6}%,${30 + (i * 7) % 12}%)`; x.fillRect(0, i * 16, 256, 16); x.fillStyle = 'rgba(0,0,0,.25)'; x.fillRect(0, i * 16, 256, 1); x.fillRect(((i * 97) % 256), i * 16, 1, 16); } }
+    else { x.fillStyle = '#e6dfd2'; x.fillRect(0, 0, 256, 256); x.fillStyle = '#cfc6b6'; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) if ((i + j) % 2) x.fillRect(i * 64, j * 64, 64, 64); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso; return t; };
+  const floorTex = { wood: tex('wood'), stone: tex('stone') };
+  const wallSeg = (x0, z0, x1, z1, h, col, gaps = []) => { const horiz = z0 === z1, a0 = horiz ? x0 : z0, a1 = horiz ? x1 : z1; let cur = a0; const segs = [];
+    for (const [g0, g1] of [...gaps].sort((a, b) => a[0] - b[0])) { if (g0 > cur) segs.push([cur, g0]); cur = Math.max(cur, g1); } if (cur < a1) segs.push([cur, a1]);
+    for (const [s0, s1] of segs) { const len = s1 - s0, m = new THREE.Mesh(new THREE.BoxGeometry(horiz ? len : .4, h, horiz ? .4 : len), new THREE.MeshBasicMaterial({ color: col })); m.position.set(horiz ? (s0 + s1) / 2 : x0, h / 2, horiz ? z0 : (s0 + s1) / 2); R.add(m);
+      const base = new THREE.Mesh(new THREE.BoxGeometry(horiz ? len : .5, .35, horiz ? .5 : len), new THREE.MeshBasicMaterial({ color: '#3a3128' })); base.position.set(m.position.x, .17, m.position.z); R.add(base); } };
+  MUS_ROOMS.forEach(([x0, z0, x1, z1, h, col, fk], i) => {
+    const w = x1 - x0, d = z1 - z0, ft = floorTex[fk].clone(); ft.needsUpdate = true; ft.repeat.set(w / 4, d / 4);
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: ft })); f.position.set((x0 + x1) / 2, .01 * i, (z0 + z1) / 2); R.add(f);
+    if (i !== 0) { const ce = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#efe8da' })); ce.position.set((x0 + x1) / 2, h, (z0 + z1) / 2); R.add(ce);
+      const sky = new THREE.Mesh(new THREE.PlaneGeometry(w - 4, Math.min(4, d - 4)).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#fffdf2' })); sky.position.set((x0 + x1) / 2, h - .02, (z0 + z1) / 2); R.add(sky); } });
+  // walls with the doorways left open
+  wallSeg(-15, -15, 15, -15, 16, '#d9d2c4'); wallSeg(-15, 15, 15, 15, 16, '#d9d2c4'); wallSeg(15, -15, 15, 15, 16, '#d9d2c4', [[-7, 7]]); wallSeg(-15, -15, -15, 15, 16, '#d9d2c4', [[-10, 10]]);
+  wallSeg(-55, -10, -15, -10, 12, '#efe9df'); wallSeg(-55, 10, -15, 10, 12, '#efe9df'); wallSeg(-55, -10, -55, 10, 12, '#efe9df');
+  wallSeg(15, -7, 135, -7, 13, '#e9e2d6', [[65, 85]]); wallSeg(15, 7, 135, 7, 13, '#e9e2d6', [[70, 90]]); wallSeg(135, -7, 135, 7, 13, '#e9e2d6');
+  wallSeg(55, -35, 95, -35, 12, '#2f3d4c'); wallSeg(55, -35, 55, -7, 12, '#2f3d4c'); wallSeg(95, -35, 95, -7, 12, '#2f3d4c');
+  wallSeg(55, 32, 105, 32, 12, '#7a1f22'); wallSeg(55, 7, 55, 32, 12, '#7a1f22'); wallSeg(105, 7, 105, 32, 12, '#7a1f22');
+  // the glass dome over the hall
+  const dg = new THREE.SphereGeometry(15, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2); const dome = new THREE.Mesh(dg, new THREE.MeshBasicMaterial({ color: '#cfe6f2', transparent: true, opacity: .12, side: THREE.DoubleSide, depthWrite: false })); dome.position.y = 16; dome.scale.y = .5; R.add(dome);
+  const de = new THREE.LineSegments(new THREE.EdgesGeometry(dg, 1), new THREE.LineBasicMaterial({ color: '#6c7780' })); de.position.y = 16; de.scale.y = .5; R.add(de);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(15, .3, 8, 64).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#b9b2a4' })); ring.position.y = 16; R.add(ring);
+  const info = skySign('루브르 박물관 · 안내'); info.position.set(0, 3.2, -14.7); info.scale.setScalar(.7); R.add(info);
+  const ex = skySign('나가는 곳 ↑'); ex.position.set(0, 5.2, 14.7); ex.rotation.y = Math.PI; ex.scale.setScalar(.6); R.add(ex);
+  const exd = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 4.2), new THREE.MeshBasicMaterial({ color: '#2a2622' })); exd.position.set(0, 2.1, 14.75); exd.rotation.y = Math.PI; R.add(exd);
+  const roomSign = (t, x, z, ry) => { const s = skySign(t); s.position.set(x, 8.5, z); s.rotation.y = ry; s.scale.setScalar(.6); R.add(s); };
+  roomSign('그랜드 갤러리', 14.7, 0, -Math.PI / 2); roomSign('조각 전시실', -14.7, 0, Math.PI / 2); roomSign('국가의 방 · 모나리자', 75, -6.7, Math.PI); roomSign('붉은 방 · 프랑스 대작', 80, 6.7, 0);
+  // the paintings, in gilded frames, each with a label
+  const goldF = new THREE.MeshBasicMaterial({ color: '#b8892e' }), goldD = new THREE.MeshBasicMaterial({ color: '#7a5a1c' });
+  for (const [id, title, sub, w, h, x, y, z, ry] of ART) {
+    const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ry; R.add(g);
+    const fr = Math.max(.12, Math.min(w, h) * .06), back = new THREE.Mesh(new THREE.BoxGeometry(w + fr * 2, h + fr * 2, .12), goldD); back.position.z = .02; g.add(back);
+    for (const [bw, bh, bx, by] of [[w + fr * 2, fr, 0, (h + fr) / 2], [w + fr * 2, fr, 0, -(h + fr) / 2], [fr, h, (w + fr) / 2, 0], [fr, h, -(w + fr) / 2, 0]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, .2), goldF); b.position.set(bx, by, .08); g.add(b); }
+    const mat = new THREE.MeshBasicMaterial({ color: '#eee' }); const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); p.position.z = .1; g.add(p);
+    if (id[0] === '@') { mat.map = paintOriginal(id.slice(1)); mat.needsUpdate = true; }
+    else texLoader.load(`/textures/art_${id}.webp?v=${TEX_V}`, t => { t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso; mat.map = t; mat.needsUpdate = true; });
+    const pl = plaque(title, sub); pl.position.set(w / 2 + fr + .5, -h / 2 + .2, .08); if (w > 5) pl.position.set(0, -h / 2 - fr - .35, .08); g.add(pl);
+    if (id === 'monalisa') { const glass = new THREE.Mesh(new THREE.BoxGeometry(w + 1, h + 1, .6), new THREE.MeshBasicMaterial({ color: '#cfe6f2', transparent: true, opacity: .14, depthWrite: false })); glass.position.z = .35; g.add(glass);
+      const wallP = new THREE.Mesh(new THREE.BoxGeometry(6, 5, .3), new THREE.MeshBasicMaterial({ color: '#3b4a5a' })); wallP.position.set(0, -.1, -.08); g.add(wallP); }
+  }
+  // the rope in front of the Mona Lisa
+  for (let i = 0; i <= 8; i++) { const a = Math.PI * i / 8, px = 75 + Math.cos(a) * 4.5, pz = -34.6 + Math.sin(a) * 3.6; const post = new THREE.Mesh(new THREE.CylinderGeometry(.05, .08, 1, 8), new THREE.MeshBasicMaterial({ color: '#c9a050' })); post.position.set(px, .5, pz); R.add(post); }
+  const rope = new THREE.Mesh(new THREE.TorusGeometry(1, .04, 6, 40, Math.PI), new THREE.MeshBasicMaterial({ color: '#8a1c1c' })); rope.scale.set(4.5, 3.6, 1); rope.rotation.x = -Math.PI / 2; rope.position.set(75, .9, -34.6); R.add(rope);
+  // benches in the big rooms
+  for (const [x, z] of [[75, -20], [80, 20], [60, 0], [100, 0]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(4, .5, 1.1), new THREE.MeshBasicMaterial({ color: '#5a3a2a' })); b.position.set(x, .45, z); R.add(b); }
+  // sculptures (originals in marble from the game's own figure, frozen mid-step) on plinths
+  gltfLoader.load(`/models/goddess.glb?v=${ASSET_V}`, gl => {
+    const mk = (x, sc, wings, t, label, sub) => { const o = THREE.SkeletonUtils.clone(gl.scene); o.scale.setScalar(sc / 1.8); o.position.set(x, 1.4, 0); o.rotation.y = Math.PI / 2;
+      o.traverse(m => { if (m.isMesh) { m.frustumCulled = false; m.material = new THREE.MeshStandardMaterial({ color: '#f2eee6', roughness: .35, emissive: '#efe7da', emissiveIntensity: .55 }); } });
+      const mix = new THREE.AnimationMixer(o); if (gl.animations[0]) { mix.clipAction(gl.animations[0]).play(); mix.update(t); } R.add(o);
+      const pd = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 2.2), new THREE.MeshBasicMaterial({ color: '#d7d0c2' })); pd.position.set(x, .7, 0); R.add(pd);
+      if (wings) for (const s of [-1, 1]) { const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.quadraticCurveTo(s * 1.6, 1.4, s * 2.6, 3.2); sh.quadraticCurveTo(s * 1.2, 2.4, 0, 1.4); sh.closePath();
+        const wm = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshStandardMaterial({ color: '#f2eee6', emissive: '#efe7da', emissiveIntensity: .5, side: THREE.DoubleSide })); wm.position.set(x - .4, 1.4 + sc * .55, 0); wm.rotation.y = Math.PI / 2; wm.rotation.x = -.3; R.add(wm); }
+      const pl = plaque(label, sub); pl.position.set(x + 1.13, .9, 0); pl.rotation.y = Math.PI / 2; R.add(pl); };
+    mk(-30, 3.2, false, 2.2, '대리석 여신상', '이 게임을 위해 만든 원작 조각'); mk(-48, 3.6, true, 4.5, '날개 달린 여신상', '이 게임을 위해 만든 원작 조각');
+  });
+}
+function enterMuseum() { if (!museumBuilt) buildMuseum(); pocketPlace(MUS.x + 4, MUS.z, MUS.y, Math.PI / 2); setPocket('museum'); pocketCam(6, 3); screenFx('#f3e2b6', '루브르 박물관'); toast('루브르 박물관 · 동쪽 그랜드 갤러리 → 남쪽 국가의 방에 모나리자, 북쪽 붉은 방에 대작들 · 서쪽은 조각 전시실 · 나갈 땐 북쪽 문'); }
+function exitMuseum() { setPocket(null); pocketPlace(MUS.door[0] + 2.5, MUS.door[1], 0, Math.PI / 2); pocketCam(8, 4); }
+
+function peerZone(y) { return y > CLUBIN.y - 60 ? 2 : y > MUS.y - 60 ? 3 : y > SKY.room - 60 ? 1 : 0; }
 
 // ---- ride specials: R while mounted on the dragon or a giant robot ----
 const RIDE_SP = {
