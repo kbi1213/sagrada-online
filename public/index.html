@@ -650,6 +650,7 @@ scene.add(new THREE.Points(starGeo, starMatP));
 const hemi = new THREE.HemisphereLight(0xffffff, 0x6b5a48, .6); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 2); sun.castShadow = true;
 sun.shadow.mapSize.set(LOW ? 1024 : 4096, LOW ? 1024 : 4096);
+let ULTRA_FOG = 1;   // ultra quality thins the haze so the city reads further out
 Object.assign(sun.shadow.camera, { left: -190, right: 190, top: 220, bottom: -190, near: 10, far: 1400 });
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.4;
 scene.add(sun); scene.add(sun.target); sun.target.position.set(0, 40, 0);
@@ -1022,7 +1023,7 @@ function applySpace(k, force) {
   if (!spaceBase || (!force && Math.abs(k - spaceShown) < .004)) return; spaceShown = k;
   skyU.top.value.copy(spaceBase.top).lerp(SPACE_TOP, k); skyU.mid.value.copy(spaceBase.mid).lerp(SPACE_MID, k * .85); skyU.bot.value.copy(spaceBase.bot);
   skyU.op.value = Math.max(spaceBase.op, k); starMatP.opacity = Math.max(spaceBase.star, k * 1.1);
-  if (scene.fog) scene.fog.density = .00042 * (1 - k * .9);
+  if (scene.fog) scene.fog.density = .00042 * (1 - k * .9) * ULTRA_FOG;
 }
 function applyTime(t) {
   const s = lerpKey(t); nightNow = s.night;
@@ -3418,8 +3419,12 @@ const RQ = (() => {
   const gl2 = renderer.capabilities.isWebGL2;
   const canFloat = gl2 && !!renderer.extensions.get('EXT_color_buffer_float');
   let mode = 'auto'; try { mode = localStorage.getItem('rqMode') || 'auto'; } catch (e) {}
-  if (/[?&]q=(auto|high|mid|low)/.test(location.search)) mode = location.search.match(/[?&]q=(\w+)/)[1];
+  if (/[?&]q=(auto|ultra|high|mid|low)/.test(location.search)) mode = location.search.match(/[?&]q=(\w+)/)[1];
   const MIN = MOBILE || SOFT_GPU ? .5 : .62, PRESET = { high: 1, mid: .75, low: .55 };
+  // big desktop GPUs (RTX xx60 and up, RX 6600+, Apple Pro/Max): 'auto' may climb past 100 % into supersampling
+  const STRONG = !LOW && /RTX\s*\d0[6-9]0|RTX\s*A\d|RX\s*[6-9][6-9]\d\d|Apple M\d+ (Pro|Max|Ultra)/i.test(GPU_NAME);
+  const SHADOW_BASE = LOW ? 1024 : 4096, SHADOW_ULTRA = Math.min(8192, renderer.capabilities.maxTextureSize);
+  function ultraPr() { return Math.max(OUT_PR, Math.min(OUT_PR * 1.6, 3, Math.sqrt(16e6 / Math.max(1, innerWidth * innerHeight)))); }
   const S = { mode, rp: OLD_PR, frames: 0, acc: 0, lastChange: 0, fps: 60, rt: null, up: canFloat };
   const sharpMat = new THREE.ShaderMaterial({
     uniforms: { tSrc: { value: null }, texel: { value: new THREE.Vector2() }, sharp: { value: .55 } },
@@ -3441,10 +3446,18 @@ const RQ = (() => {
     depthTest: false, depthWrite: false });
   const blitScene = new THREE.Scene(), blitCam = new THREE.Camera();
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), sharpMat); quad.frustumCulled = false; blitScene.add(quad);
-  function targetRp() { return S.mode === 'auto' ? S.rp : OUT_PR * PRESET[S.mode]; }
+  function targetRp() { return S.mode === 'auto' ? Math.min(S.rp, ultraPr()) : S.mode === 'ultra' ? ultraPr() : OUT_PR * PRESET[S.mode]; }
+  function setUltra(on) {
+    if (S.ultra === on) return; S.ultra = on;
+    const sz = on ? SHADOW_ULTRA : SHADOW_BASE;
+    if (sun.shadow.mapSize.x !== sz) { sun.shadow.mapSize.set(sz, sz); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+    ULTRA_FOG = on ? .55 : 1; try { applyTime(timeEl.value / 100); } catch (e) {}
+  }
   function apply() {
     const rp = targetRp(), useUp = S.up && rp < OUT_PR * .97;
-    if (useUp) {
+    setUltra(!LOW && rp > OUT_PR * 1.01);
+    if (rp > OUT_PR * 1.01) { renderer.setPixelRatio(rp); if (S.rt) { S.rt.dispose(); S.rt = null; } }   // supersampling: draw bigger than the screen, the browser shrinks it
+    else if (useUp) {
       renderer.setPixelRatio(OUT_PR);
       const w = Math.max(1, Math.round(innerWidth * rp)), h = Math.max(1, Math.round(innerHeight * rp));
       if (!S.rt) { S.rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: SOFT_GPU ? 0 : MOBILE ? 2 : 4 }); S.rt.texture.generateMipmaps = false; }
@@ -3459,7 +3472,7 @@ const RQ = (() => {
   }
   function updateBtn() {
     const b = document.getElementById('qualBtn'); if (!b) return;
-    const name = { auto: '자동', high: '높음', mid: '보통', low: '낮음' }[S.mode];
+    const name = { auto: '자동', ultra: '울트라', high: '높음', mid: '보통', low: '낮음' }[S.mode];
     b.textContent = `화질: ${name} · ${Math.round(targetRp() / OUT_PR * 100)}%`;
     b.title = `렌더 해상도 ${Math.round(innerWidth * targetRp())}×${Math.round(innerHeight * targetRp())} · ${Math.round(S.fps)}fps${S.active ? ' · 업스케일+샤픈' : ''} · GPU ${GPU_NAME.replace(/^ANGLE \(|\(0x.*$/g, '')}`;
   }
@@ -3471,8 +3484,9 @@ const RQ = (() => {
     S.fps = S.frames / S.acc; S.frames = 0; S.acc = 0;
     if (S.mode === 'auto' && now - S.lastChange > 1500) {
       let rp = S.rp;
+      if (S.fps < 50 && rp > OUT_PR * 1.01) S.noUltra = true;   // supersampling cost frames here: stay at 100 % or below for the rest of the visit
       if (S.fps < 40) rp *= .82; else if (S.fps < 50) rp *= .92; else if (S.fps > 57 && now - S.lastChange > 4000) rp *= 1.06;
-      rp = Math.min(OUT_PR, Math.max(OUT_PR * MIN, rp));
+      rp = Math.min(STRONG && !S.noUltra ? ultraPr() : OUT_PR, Math.max(OUT_PR * MIN, rp));
       if (Math.abs(rp - S.rp) > .01) { S.rp = rp; S.lastChange = now; apply(); }
     }
     // laptops with two GPUs: the browser often runs on the built-in Intel/AMD chip. Tell the player once how to move it to the NVIDIA one.
@@ -3488,7 +3502,7 @@ const RQ = (() => {
   }
   function setMode(m) { S.mode = m; try { localStorage.setItem('rqMode', m); } catch (e) {} S.lastChange = performance.now(); apply(); }
   addEventListener('resize', () => setTimeout(apply, 0));
-  return { S, apply, tick, render, setMode, OUT_PR, targetRp };
+  return { S, apply, tick, render, setMode, OUT_PR, targetRp, get ultra() { return !!S.ultra; } };
 })();
 RQ.apply();
 const festSmokeTex = (() => { const c = cv(128, 128), x = c.getContext('2d');
@@ -3578,7 +3592,7 @@ function updateStageFx(now, dt, t, beat, kick, sec, lvl, bar, camD) {
     const prev = renderer.getRenderTarget(), au = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;
     renderer.setRenderTarget(I.rt); renderer.render(scene, cam); renderer.setRenderTarget(prev); renderer.shadowMap.autoUpdate = au; }
   // bloom only near the festival at night, and only on capable machines
-  const want = !LOW && ((camD < 520 && night > .25) || pocket === 'club');
+  const want = !LOW && (((camD < 520 || RQ.ultra) && night > .25) || pocket === 'club');
   if (want && !composer && THREE.EffectComposer && THREE.UnrealBloomPass) {
     const pr = renderer.getPixelRatio(), rt = new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { samples: 4, type: THREE.HalfFloatType });
     composer = new THREE.EffectComposer(renderer, rt); composer.addPass(new THREE.RenderPass(scene, camera));
@@ -3594,7 +3608,7 @@ try { festNight.on = localStorage.getItem('festNight') !== '0'; } catch (e) {}
 function setFestNightBtn() { const b = document.getElementById('festNightBtn'); if (b) { b.setAttribute('aria-pressed', festNight.on ? 'true' : 'false'); b.textContent = festNight.on ? '페스티벌 자동 밤 켜짐' : '페스티벌 자동 밤 꺼짐'; } }
 document.getElementById('festNightBtn').addEventListener('click', () => { festNight.on = !festNight.on; try { localStorage.setItem('festNight', festNight.on ? '1' : '0'); } catch (e) {} setFestNightBtn(); });
 setFestNightBtn();
-document.getElementById('qualBtn').addEventListener('click', () => { const order = ['auto', 'high', 'mid', 'low']; RQ.setMode(order[(order.indexOf(RQ.S.mode) + 1) % 4]); toast('화질: ' + document.getElementById('qualBtn').textContent.replace('화질: ', '')); });
+document.getElementById('qualBtn').addEventListener('click', () => { const order = ['auto', 'ultra', 'high', 'mid', 'low']; RQ.setMode(order[(order.indexOf(RQ.S.mode) + 1) % order.length]); toast('화질: ' + document.getElementById('qualBtn').textContent.replace('화질: ', '')); });
 timeEl.addEventListener('input', () => { if (!festNight.anim) festNight.touched = true; });
 function rollClock(to, now) { festNight.anim = { from: +timeEl.value, to, s: now }; }
 function updateFestNight(now, near) {
@@ -3607,7 +3621,8 @@ function updateFestNight(now, near) {
 
 // ---- festival music: a YouTube link plays over the field (everyone in the channel hears the same one); the built-in synth track is the fallback ----
 const FEST_DEFAULT = 'vRn4eYPkEfg'; // the festival's opening track until someone in the channel changes it
-const festYT = { v: FEST_DEFAULT, frame: null, vol: -1, playing: false, muted: false, ready: false };
+const festYT = { v: FEST_DEFAULT, frame: null, vol: -1, playing: false, muted: true, ready: false };
+try { festYT.muted = localStorage.getItem('festMuted') !== '0'; } catch (e) {}   // music starts OFF; the player's choice is remembered
 try { const v = localStorage.getItem('festYT'); if (v === '-') festYT.v = null; else if (/^[A-Za-z0-9_-]{11}$/.test(v || '')) festYT.v = v; } catch (e) {}
 const festPlayerEl = document.getElementById('festPlayer');
 function festCmd(func, args = []) { const f = festYT.frame; if (f && f.contentWindow) f.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args }), '*'); }
@@ -3622,15 +3637,17 @@ function festLoad(v, create = true) {
 }
 document.getElementById('festForm').addEventListener('submit', e => {
   e.preventDefault(); const inp = document.getElementById('festUrl'), v = parseYouTube(inp.value);
-  if (!v) { toast('유튜브 링크를 확인해 주세요'); return; } inp.value = ''; festYT.muted = false; document.getElementById('festMute').textContent = '음악 끄기';
+  if (!v) { toast('유튜브 링크를 확인해 주세요'); return; } inp.value = ''; festYT.muted = false; try { localStorage.setItem('festMuted', '0'); } catch (e) {} document.getElementById('festMute').textContent = '음악 끄기';
   if (room && room.connected()) { room.emit('fest', { v }); toast('페스티벌에 이 곡을 틀었어요 · 같은 채널 모두에게 들려요'); } else { festLoad(v, true); toast('페스티벌에 이 곡을 틀었어요 · 무대 근처에서 크게 들려요'); }
 });
 document.getElementById('festSynth').addEventListener('click', () => { if (room && room.connected()) room.emit('fest', { v: '-' }); else festLoad(null); toast('기본 합성 EDM으로 바꿨어요'); });
-document.getElementById('festMute').addEventListener('click', e => { festYT.muted = !festYT.muted; e.currentTarget.textContent = festYT.muted ? '음악 켜기' : '음악 끄기'; festYT.vol = -1; });
+document.getElementById('festMute').textContent = festYT.muted ? '음악 켜기' : '음악 끄기';
+document.getElementById('festMute').addEventListener('click', e => { festYT.muted = !festYT.muted; try { localStorage.setItem('festMuted', festYT.muted ? '1' : '0'); } catch (err) {} e.currentTarget.textContent = festYT.muted ? '음악 켜기' : '음악 끄기'; festYT.vol = -1; });
 if (room) room.on('fest', msg => { const v = msg.data && msg.data.v; if (typeof v !== 'string') return; const nv = /^[A-Za-z0-9_-]{11}$/.test(v) ? v : null; if (nv !== festYT.v || !festYT.frame) { festLoad(nv, !!festYT.frame); if (!msg.isMe && !msg.welcome) toast(nv ? '페스티벌 음악이 바뀌었어요' : '페스티벌이 기본 EDM으로 바뀌었어요'); } });
 // volume follows you: full in the crowd, fading out by 260 m; the player pauses far away and resumes when you come back
 function updateFestYT(now, vol01, show) {
   if (!festYT.v) { festPlayerEl.hidden = true; return; }
+  if (festYT.muted) { festPlayerEl.hidden = true; if (festYT.frame && festYT.playing) { festCmd('pauseVideo'); festYT.playing = false; } return; }
   if (!festYT.frame && show) festLoad(festYT.v);
   festPlayerEl.hidden = !show;
   const want = festYT.muted || !soundOn ? 0 : Math.round(vol01 * 100);
@@ -3723,7 +3740,7 @@ function updateClub(now, dt) {
   if (pd < 120 && walking && (!actx || actx.state !== 'running') && now - clubAudio.poke > 2000) { clubAudio.poke = now; ac(); }
   const near = pocket === 'club' || inClub || pd < 60, vol = pocket === 'club' ? 1 : !walking ? Math.max(0, 1 - camD / 200) * .5 : inClub ? 1 : Math.max(0, 1 - Math.max(0, pd - 40) / 160) * .8;
   updateFestYT(now, Math.min(1, vol * 1.15), pocket === 'club' || (walking ? pd < 260 : camD < 300));
-  clubAudioTick(now, festYT.v ? 0 : vol, near);
+  clubAudioTick(now, festYT.v || festYT.muted ? 0 : vol, near);
   if (me && !inClub && pd < 110 && now - clubHintAt > 30000) { clubHintAt = now; toast('네온 펄스 페스티벌 · 연못 동쪽 무대 앞으로 가 보세요'); }
 }
 
