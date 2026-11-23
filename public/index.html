@@ -224,6 +224,7 @@ body.riding #toast{top:calc(160px + env(safe-area-inset-top,0px))}
     <div class="ticks"><span>새벽</span><span>정오</span><span>석양</span><span>밤</span></div>
     <div class="seg kale-row"><button id="kaleBtn" type="button" aria-pressed="false">만화경 하늘 (K)</button><button id="kaleNext" type="button" disabled>무늬: 꽃잎</button></div>
     <div class="seg kale-row"><button id="skyLookBtn" type="button" aria-pressed="false">하늘 보기 (V)</button><button id="festNightBtn" type="button" aria-pressed="true">페스티벌 자동 밤 켜짐</button></div>
+    <div class="seg kale-row"><button id="qualBtn" type="button" aria-label="화질 바꾸기">화질: 자동</button></div>
   </div>
   <div>
     <p class="group-label">공정</p>
@@ -3408,6 +3409,88 @@ function renderScreen3D(now, beat, kick, sec, lvl) {
 
 // ---- stage upgrade: moving-head beams in haze, low smoke and CO2 jets, live camera side screens, LED pillars, bloom ----
 let festBloom = 0, composer = null, bloomPass = null;
+// ---------- render quality: dynamic resolution + upscale/sharpen (FSR-1 style) ----------
+// The canvas keeps the screen's resolution; the 3D scene is drawn smaller into a float buffer and then
+// stretched back up with a sharpening filter, so a phone or a weak GPU draws far fewer pixels.
+const RQ = (() => {
+  const OUT_PR = Math.min(window.devicePixelRatio || 1, 2);
+  const OLD_PR = LOW ? Math.min(window.devicePixelRatio || 1, MOBILE ? 1.25 : 1) : OUT_PR;
+  const gl2 = renderer.capabilities.isWebGL2;
+  const canFloat = gl2 && !!renderer.extensions.get('EXT_color_buffer_float');
+  let mode = 'auto'; try { mode = localStorage.getItem('rqMode') || 'auto'; } catch (e) {}
+  if (/[?&]q=(auto|high|mid|low)/.test(location.search)) mode = location.search.match(/[?&]q=(\w+)/)[1];
+  const MIN = MOBILE || SOFT_GPU ? .5 : .62, PRESET = { high: 1, mid: .75, low: .55 };
+  const S = { mode, rp: OLD_PR, frames: 0, acc: 0, lastChange: 0, fps: 60, rt: null, up: canFloat };
+  const sharpMat = new THREE.ShaderMaterial({
+    uniforms: { tSrc: { value: null }, texel: { value: new THREE.Vector2() }, sharp: { value: .55 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: `uniform sampler2D tSrc; uniform vec2 texel; uniform float sharp; varying vec2 vUv;
+      void main(){
+        vec4 c4 = texture2D(tSrc, vUv); vec3 c = c4.rgb;
+        vec3 n = texture2D(tSrc, vUv + vec2(0.0, texel.y)).rgb, s = texture2D(tSrc, vUv - vec2(0.0, texel.y)).rgb;
+        vec3 e = texture2D(tSrc, vUv + vec2(texel.x, 0.0)).rgb, w = texture2D(tSrc, vUv - vec2(texel.x, 0.0)).rgb;
+        vec3 mn = min(c, min(min(n, s), min(e, w))), mx = max(c, max(max(n, s), max(e, w)));
+        // contrast-adaptive: sharpen less where the neighbourhood already has strong contrast
+        float lc = dot(mx - mn, vec3(.299, .587, .114)) / (dot(mx, vec3(.299, .587, .114)) + 1e-3);
+        float k = sharp * (1.0 - clamp(lc, 0.0, 1.0) * .6);
+        vec3 r = clamp(c + k * (4.0 * c - n - s - e - w) * .25, mn, mx);
+        gl_FragColor = vec4(r, c4.a);
+        #include <tonemapping_fragment>
+        #include <encodings_fragment>
+      }`,
+    depthTest: false, depthWrite: false });
+  const blitScene = new THREE.Scene(), blitCam = new THREE.Camera();
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), sharpMat); quad.frustumCulled = false; blitScene.add(quad);
+  function targetRp() { return S.mode === 'auto' ? S.rp : OUT_PR * PRESET[S.mode]; }
+  function apply() {
+    const rp = targetRp(), useUp = S.up && rp < OUT_PR * .97;
+    if (useUp) {
+      renderer.setPixelRatio(OUT_PR);
+      const w = Math.max(1, Math.round(innerWidth * rp)), h = Math.max(1, Math.round(innerHeight * rp));
+      if (!S.rt) { S.rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: SOFT_GPU ? 0 : MOBILE ? 2 : 4 }); S.rt.texture.generateMipmaps = false; }
+      else if (S.rt.width !== w || S.rt.height !== h) S.rt.setSize(w, h);
+      sharpMat.uniforms.tSrc.value = S.rt.texture; sharpMat.uniforms.texel.value.set(1 / w, 1 / h);
+      sharpMat.uniforms.sharp.value = rp / OUT_PR < .7 ? .7 : .5;
+    } else { renderer.setPixelRatio(S.up ? OUT_PR : rp); if (S.rt) { S.rt.dispose(); S.rt = null; } }
+    S.active = useUp;
+    renderer.setSize(innerWidth, innerHeight, false);
+    if (composer) composer.setPixelRatio(rp);
+    updateBtn();
+  }
+  function updateBtn() {
+    const b = document.getElementById('qualBtn'); if (!b) return;
+    const name = { auto: '자동', high: '높음', mid: '보통', low: '낮음' }[S.mode];
+    b.textContent = `화질: ${name} · ${Math.round(targetRp() / OUT_PR * 100)}%`;
+    b.title = `렌더 해상도 ${Math.round(innerWidth * targetRp())}×${Math.round(innerHeight * targetRp())} · ${Math.round(S.fps)}fps${S.active ? ' · 업스케일+샤픈' : ''} · GPU ${GPU_NAME.replace(/^ANGLE \(|\(0x.*$/g, '')}`;
+  }
+  // frame-time watcher (auto mode): drop resolution when the frame rate sags, raise it again when there is headroom
+  function tick(dt, now) {
+    if (dt <= 0 || dt >= .2) return;   // tab switch / hitch: ignore
+    S.frames++; S.acc += dt;
+    if (S.acc < 1) return;
+    S.fps = S.frames / S.acc; S.frames = 0; S.acc = 0;
+    if (S.mode === 'auto' && now - S.lastChange > 1500) {
+      let rp = S.rp;
+      if (S.fps < 40) rp *= .82; else if (S.fps < 50) rp *= .92; else if (S.fps > 57 && now - S.lastChange > 4000) rp *= 1.06;
+      rp = Math.min(OUT_PR, Math.max(OUT_PR * MIN, rp));
+      if (Math.abs(rp - S.rp) > .01) { S.rp = rp; S.lastChange = now; apply(); }
+    }
+    // laptops with two GPUs: the browser often runs on the built-in Intel/AMD chip. Tell the player once how to move it to the NVIDIA one.
+    if (!S.gpuTold && !MOBILE && S.fps < 45 && /intel|radeon\(tm\) graphics|radeon graphics/i.test(GPU_NAME) && !/arc/i.test(GPU_NAME)) {
+      S.gpuTold = true; setTimeout(() => toast('내장 그래픽(' + (/intel/i.test(GPU_NAME) ? 'Intel' : 'AMD') + ')으로 실행 중 — 노트북에 NVIDIA가 있으면 Windows 설정 › 시스템 › 디스플레이 › 그래픽에서 브라우저를 "고성능"으로 바꾸세요'), 1500); }
+    updateBtn();
+  }
+  function render(cam) {
+    if (composer && festBloom > 0) { bloomPass.strength = festBloom; composer.render(); return; }
+    if (!S.active) { renderer.render(scene, cam); return; }
+    renderer.setRenderTarget(S.rt); renderer.render(scene, cam);
+    renderer.setRenderTarget(null); renderer.render(blitScene, blitCam);
+  }
+  function setMode(m) { S.mode = m; try { localStorage.setItem('rqMode', m); } catch (e) {} S.lastChange = performance.now(); apply(); }
+  addEventListener('resize', () => setTimeout(apply, 0));
+  return { S, apply, tick, render, setMode, OUT_PR, targetRp };
+})();
+RQ.apply();
 const festSmokeTex = (() => { const c = cv(128, 128), x = c.getContext('2d');
   for (let i = 0; i < 26; i++) { const px = 64 + (Math.random() - .5) * 50, py = 64 + (Math.random() - .5) * 50, r = 18 + Math.random() * 30, g = x.createRadialGradient(px, py, 0, px, py, r);
     g.addColorStop(0, 'rgba(255,255,255,.22)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); }
@@ -3501,7 +3584,7 @@ function updateStageFx(now, dt, t, beat, kick, sec, lvl, bar, camD) {
     composer = new THREE.EffectComposer(renderer, rt); composer.addPass(new THREE.RenderPass(scene, camera));
     bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1, .6, .7); composer.addPass(bloomPass);
     composer.addPass(new THREE.ShaderPass(THREE.GammaCorrectionShader));
-    addEventListener('resize', () => composer && composer.setSize(innerWidth, innerHeight)); }
+    addEventListener('resize', () => composer && composer.setSize(innerWidth, innerHeight)); RQ.apply(); }
   festBloom = want && composer ? (.55 + .75 * (pocket === 'club' ? 1 : night)) * (1 - Math.min(1, Math.max(0, camD - 380) / 140)) + kick * .25 * lvl : 0;
 }
 
@@ -3511,6 +3594,7 @@ try { festNight.on = localStorage.getItem('festNight') !== '0'; } catch (e) {}
 function setFestNightBtn() { const b = document.getElementById('festNightBtn'); if (b) { b.setAttribute('aria-pressed', festNight.on ? 'true' : 'false'); b.textContent = festNight.on ? '페스티벌 자동 밤 켜짐' : '페스티벌 자동 밤 꺼짐'; } }
 document.getElementById('festNightBtn').addEventListener('click', () => { festNight.on = !festNight.on; try { localStorage.setItem('festNight', festNight.on ? '1' : '0'); } catch (e) {} setFestNightBtn(); });
 setFestNightBtn();
+document.getElementById('qualBtn').addEventListener('click', () => { const order = ['auto', 'high', 'mid', 'low']; RQ.setMode(order[(order.indexOf(RQ.S.mode) + 1) % 4]); toast('화질: ' + document.getElementById('qualBtn').textContent.replace('화질: ', '')); });
 timeEl.addEventListener('input', () => { if (!festNight.anim) festNight.touched = true; });
 function rollClock(to, now) { festNight.anim = { from: +timeEl.value, to, s: now }; }
 function updateFestNight(now, near) {
@@ -5462,7 +5546,7 @@ if (/[?&](info|debug)=1/.test(location.search)) {
   const soft = /swiftshader|llvmpipe|software|basic render/i.test(gpu);
   const box = document.createElement('div');
   box.style.cssText = 'position:fixed;left:50%;bottom:8px;transform:translateX(-50%);z-index:9;background:rgba(0,0,0,.78);color:#fff;font:12px/1.5 monospace;padding:6px 10px;border-radius:8px;max-width:92vw;pointer-events:none';
-  box.textContent = `${LOW ? '[저사양 모드] ' : ''}GPU: ${gpu}${soft ? '  ⚠ 소프트웨어 렌더링 (크롬 하드웨어 가속 꺼짐)' : ''} · 화면배율 ${devicePixelRatio} · 렌더배율 ${renderer.getPixelRatio()} · ${innerWidth}×${innerHeight} · 에셋 v${ASSET_V}`;
+  box.textContent = `${LOW ? '[저사양 모드] ' : ''}GPU: ${gpu}${soft ? '  ⚠ 소프트웨어 렌더링 (크롬 하드웨어 가속 꺼짐)' : ''} · 화면배율 ${devicePixelRatio} · 렌더배율 ${renderer.getPixelRatio()} · 장면해상도 ${Math.round(RQ.targetRp() / RQ.OUT_PR * 100)}% · ${innerWidth}×${innerHeight} · 에셋 v${ASSET_V}`;
   document.body.append(box);
 }
 // ---------- loop ----------
@@ -5477,7 +5561,7 @@ renderer.setAnimationLoop((now) => {
   controls.update(); lookClamp();
   if (!tourOn) doPick(); updateScreen(now);
   const sh = shakeOffset(now); camera.position.add(sh);
-  if (composer && festBloom > 0) { bloomPass.strength = festBloom; composer.render(); } else renderer.render(scene, camera); if (screenLive) cssRenderer.render(cssScene, camera);
+  RQ.render(camera); RQ.tick(dt, now); if (screenLive) cssRenderer.render(cssScene, camera);
   camera.position.sub(sh);
 });
 })();
